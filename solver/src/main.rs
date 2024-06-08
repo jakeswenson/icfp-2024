@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 struct Cli {
   #[command(subcommand)]
-  command: Command
+  command: Command,
 }
 
 #[derive(Subcommand)]
@@ -15,7 +15,13 @@ enum Command {
 }
 
 fn main() -> Result<()> {
-  let _cli = Cli::parse();
+  let cli = Cli::parse();
+
+  match cli.command {
+    Command::Run => {
+      println!("Running!");
+    }
+  }
 
   Ok(())
 }
