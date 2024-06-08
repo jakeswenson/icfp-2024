@@ -15,9 +15,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
     - name: Install alsa and udev
       run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+    # https://github.com/actions/cache/blob/main/examples.md#rust---cargo
+    - uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    # https://www.uffizzi.com/blog/optimizing-rust-builds-for-faster-github-actions-pipelines
+    - name: Configure sccache
+      run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo “SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.2
+    - uses: actions/checkout@v4
     - name: Build
       run: cargo build --verbose
     - name: Run tests
