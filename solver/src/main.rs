@@ -1,5 +1,5 @@
-use eyre::Result;
 use clap::{Parser, Subcommand};
+use eyre::Result;
 
 /// https://docs.rs/clap/latest/clap/_tutorial/chapter_2/index.html#subcommands
 /// https://docs.rs/clap/latest/clap/_derive/index.html#command-attributes
@@ -15,6 +15,8 @@ enum Command {
 }
 
 fn main() -> Result<()> {
+  tracing_subscriber::fmt().init();
+
   let cli = Cli::parse();
 
   match cli.command {

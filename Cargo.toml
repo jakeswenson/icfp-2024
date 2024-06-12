@@ -6,9 +6,24 @@ members = ["viz", "solver"]
 version = "0.0.0"
 publish = false
 edition = "2021"
+rust-version = "1.78.0"
 
 [workspace.lints.rust]
+warnings = 'deny'
 unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# Groups
+suspicious = "deny"
+complexity = 'deny'
+style = 'deny'
+cargo = "deny"
+perf = 'allow'
+pedantic = 'allow'
+
+# Individual
+unwrap_used = "allow" # for now :)
+unwrap_in_result = "deny"
 
 [workspace.dependencies]
 bevy = "0.13"

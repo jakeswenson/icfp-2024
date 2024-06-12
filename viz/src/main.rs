@@ -8,6 +8,8 @@ const MARGIN: Val = Val::Px(5.);
 
 /// https://github.com/bevyengine/bevy/blob/latest/examples/ui/flex_layout.rs
 fn main() -> Result<()> {
+  tracing_subscriber::fmt().init();
+
   App::new()
     .add_plugins(DefaultPlugins.set(WindowPlugin {
       primary_window: Some(Window {
@@ -23,7 +25,10 @@ fn main() -> Result<()> {
   Ok(())
 }
 
-fn spawn_layout(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn spawn_layout(
+  mut commands: Commands,
+  asset_server: Res<AssetServer>,
+) {
   let font = asset_server.load("fonts/Hack-Bold.ttf");
   commands.spawn(Camera2dBundle::default());
   commands
@@ -104,12 +109,7 @@ fn spawn_layout(mut commands: Commands, asset_server: Res<AssetServer>) {
               })
               .with_children(|builder| {
                 for align_items in alignments {
-                  spawn_child_node(
-                    builder,
-                    font.clone(),
-                    align_items,
-                    justify_content,
-                  );
+                  spawn_child_node(builder, font.clone(), align_items, justify_content);
                 }
               });
           }
