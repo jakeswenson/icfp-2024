@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use eyre::Result;
+use color_eyre::eyre::Result;
 
 /// https://docs.rs/clap/latest/clap/_tutorial/chapter_2/index.html#subcommands
 /// https://docs.rs/clap/latest/clap/_derive/index.html#command-attributes
@@ -15,6 +15,7 @@ enum Command {
 }
 
 fn main() -> Result<()> {
+  color_eyre::install()?;
   tracing_subscriber::fmt().init();
 
   let cli = Cli::parse();
