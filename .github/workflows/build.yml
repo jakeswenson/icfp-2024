@@ -1,5 +1,4 @@
 name: Build
-
 on:
   push:
     branches: [ "main" ]
@@ -32,11 +31,11 @@ jobs:
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.4
     - uses: actions/checkout@v4
-     - uses: actions-rs/toolchain@v1
-            with:
-                toolchain: 1.78.0
-                components: clippy, rustfmt
-                override: true
+    - uses: actions-rs/toolchain@v1
+      with:
+          toolchain: 1.78.0
+          components: clippy, rustfmt
+          override: true
     - name: Build
       run: cargo build --verbose
     - name: Run tests
