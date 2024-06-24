@@ -1,3 +1,4 @@
+use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use eyre::Result;
 
@@ -7,18 +8,25 @@ const JUSTIFY_CONTENT_COLOR: Color = Color::rgb(0.102, 0.522, 1.);
 const MARGIN: Val = Val::Px(5.);
 
 /// https://github.com/bevyengine/bevy/blob/latest/examples/ui/flex_layout.rs
+/// <https://taintedcoders.com/bevy/ui/>
 fn main() -> Result<()> {
-  tracing_subscriber::fmt().init();
-
   App::new()
-    .add_plugins(DefaultPlugins.set(WindowPlugin {
-      primary_window: Some(Window {
-        resolution: [870., 1066.].into(),
-        title: "Bevy Flex Layout Example".to_string(),
-        ..Default::default()
-      }),
-      ..Default::default()
-    }))
+    .add_plugins(
+      DefaultPlugins
+        .set(WindowPlugin {
+          primary_window: Some(Window {
+            resolution: [870., 1066.].into(),
+            title: "Bevy Flex Layout Example".to_string(),
+            ..Default::default()
+          }),
+          ..Default::default()
+        })
+        .set(LogPlugin {
+          filter: "info,wgpu_core=warn,wgpu_hal=warn".into(),
+          level: bevy::log::Level::DEBUG,
+          update_subscriber: None,
+        }),
+    )
     .add_systems(Startup, spawn_layout)
     .run();
 
