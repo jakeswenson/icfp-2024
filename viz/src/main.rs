@@ -1,22 +1,75 @@
+use bevy::input::common_conditions::input_pressed;
+use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
-use eyre::Result;
+use bevy::sprite::MaterialMesh2dBundle;
+use bevy::winit::WinitSettings;
+use color_eyre::eyre::Result;
+
+#[derive(Component)]
+struct Camera;
+
+#[derive(Component)]
+struct Ui;
 
 /// https://bevyengine.org/learn/quick-start/getting-started/ecs/
 const ALIGN_ITEMS_COLOR: Color = Color::rgb(1., 0.066, 0.349);
 const JUSTIFY_CONTENT_COLOR: Color = Color::rgb(0.102, 0.522, 1.);
 const MARGIN: Val = Val::Px(5.);
 
+//https://bevy-cheatbook.github.io/input/mouse.html
+// https://bevy-cheatbook.github.io/features/camera.html
+fn zoom_camera(
+  mut camera_project_query: Query<&mut OrthographicProjection, With<Camera>>,
+  mut scroll_events: EventReader<MouseWheel>,
+) {
+  use bevy::input::mouse::MouseScrollUnit;
+  for ev in scroll_events.read() {
+    // info!("Got an event {ev:?}");
+    match ev.unit {
+      MouseScrollUnit::Line => {
+        // println!("Scroll (line units): vertical: {}, horizontal: {}", ev.y, ev.x);
+      }
+      MouseScrollUnit::Pixel => {
+        let mut projection = camera_project_query.single_mut();
+
+        projection.scale *= 1.0 - (ev.y / 1000.);
+
+        // always ensure you end up with sane values
+        // (pick an upper and lower bound for your application)
+        projection.scale = projection.scale.clamp(0.2, 100.0);
+      }
+    }
+  }
+}
+
+fn move_camera(
+  projection_query: Query<&mut OrthographicProjection, With<Camera>>,
+  mut camera_position_query: Query<&mut Transform, With<Camera>>,
+  mut motion_evr: EventReader<MouseMotion>,
+) {
+  let projection = projection_query.single();
+
+  let mut camera_position = camera_position_query.single_mut();
+  for move_event in motion_evr.read() {
+    let scale = projection.scale.clamp(1.0, 5.0);
+    camera_position.translation.x -= move_event.delta.x * scale;
+    camera_position.translation.y += move_event.delta.y * scale;
+  }
+}
+
 /// https://github.com/bevyengine/bevy/blob/latest/examples/ui/flex_layout.rs
 /// <https://taintedcoders.com/bevy/ui/>
 fn main() -> Result<()> {
+  color_eyre::install()?;
   App::new()
+    .insert_resource(WinitSettings::desktop_app())
     .add_plugins(
       DefaultPlugins
         .set(WindowPlugin {
           primary_window: Some(Window {
             resolution: [870., 1066.].into(),
-            title: "Bevy Flex Layout Example".to_string(),
+            title: "ICFP 2024 - Contest Visualizer".to_string(),
             ..Default::default()
           }),
           ..Default::default()
@@ -28,29 +81,69 @@ fn main() -> Result<()> {
         }),
     )
     .add_systems(Startup, spawn_layout)
+    .add_systems(
+      Update,
+      (
+        zoom_camera,
+        move_camera.run_if(input_pressed(MouseButton::Left)),
+        keyboard_input_system,
+      ),
+    )
     .run();
 
   Ok(())
 }
 
+/// This system prints 'A' key state
+fn keyboard_input_system(
+  keyboard_input: Res<ButtonInput<KeyCode>>,
+  mut main_node: Query<&mut Visibility, With<Ui>>,
+) {
+  let mut viz = main_node.single_mut();
+  if keyboard_input.pressed(KeyCode::Escape) {
+    *viz = Visibility::Visible;
+  }
+
+  if keyboard_input.just_released(KeyCode::Escape) {
+    *viz = Visibility::Hidden;
+  }
+}
+
 fn spawn_layout(
   mut commands: Commands,
   asset_server: Res<AssetServer>,
+  mut meshes: ResMut<Assets<Mesh>>,
+  mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
   let font = asset_server.load("fonts/Hack-Bold.ttf");
-  commands.spawn(Camera2dBundle::default());
+  // commands.spawn(Camera2dBundle::default());
+  commands.insert_resource(ClearColor(Color::CYAN));
+
+  commands.spawn((Camera2dBundle::new_with_far(100.), Camera));
+
+  commands.spawn(MaterialMesh2dBundle {
+    mesh: meshes.add(Rectangle::new(600.0, 800.0)).into(),
+    material: materials.add(ColorMaterial::from(Color::BLACK)),
+    transform: Transform::from_xyz(0.0, 0.0, 0.0),
+    ..default()
+  });
+
   commands
-    .spawn(NodeBundle {
-      style: Style {
-        // fill the entire window
-        width: Val::Percent(100.),
-        flex_direction: FlexDirection::Column,
-        align_items: AlignItems::Center,
+    .spawn((
+      NodeBundle {
+        style: Style {
+          // fill the entire window
+          width: Val::Percent(100.),
+          flex_direction: FlexDirection::Column,
+          align_items: AlignItems::Center,
+          ..Default::default()
+        },
+        visibility: Visibility::Hidden,
+        background_color: BackgroundColor(Color::BLACK),
         ..Default::default()
       },
-      background_color: BackgroundColor(Color::BLACK),
-      ..Default::default()
-    })
+      Ui,
+    ))
     .with_children(|builder| {
       // spawn the key
       builder
