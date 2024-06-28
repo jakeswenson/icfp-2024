@@ -1,13 +1,13 @@
+use crate::communicator::send_program;
+use crate::parser::{Decode, Encode, ICFPExpr, Str};
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::{anyhow, Result};
 use dotenvy::dotenv;
-use crate::parser::{ICFPExpr, Encode, Decode, Str};
 use tracing::{error, info};
-use crate::communicator::send_program;
 
+mod communicator;
 #[allow(dead_code)]
 mod parser;
-mod communicator;
 
 /// https://docs.rs/clap/latest/clap/_tutorial/chapter_2/index.html#subcommands
 /// https://docs.rs/clap/latest/clap/_derive/index.html#command-attributes
@@ -23,8 +23,8 @@ enum Command {
   Decode { input: String },
   Send,
   Encode { string: String },
-  Get {page: String},
-  Echo {text: String}
+  Get { page: String },
+  Echo { text: String },
 }
 
 #[tokio::main]
@@ -52,13 +52,13 @@ async fn main() -> Result<()> {
 
       println!("Encoded: {}", x.encode())
     }
-    Command::Decode{input} => {
+    Command::Decode { input } => {
       let expr = ICFPExpr::decode(&input)?;
       println!();
       println!();
       info!(?expr, "Decoded")
-    },
-    Command::Get {page} => {
+    }
+    Command::Get { page } => {
       let request = format!("get {page}");
 
       let prog = ICFPExpr::String(Str(request));
@@ -69,12 +69,12 @@ async fn main() -> Result<()> {
 
       let ICFPExpr::String(Str(page_text)) = result else {
         error!(expr = ?result, "Expected string result of page text, got");
-        return Err(anyhow!("Unexpected response"))
+        return Err(anyhow!("Unexpected response"));
       };
 
       println!("Response: {page_text}");
     }
-    Command::Echo {text} => {
+    Command::Echo { text } => {
       let request = format!("echo {text}");
 
       let prog = ICFPExpr::String(Str(request));
@@ -85,13 +85,12 @@ async fn main() -> Result<()> {
 
       let ICFPExpr::String(Str(response_text)) = result else {
         error!(expr = ?result, "Expected string result of echo text, got");
-        return Err(anyhow!("Unexpected response"))
+        return Err(anyhow!("Unexpected response"));
       };
 
       println!("Response: {response_text}");
     }
   }
-
 
   Ok(())
 }

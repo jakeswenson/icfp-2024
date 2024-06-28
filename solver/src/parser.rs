@@ -210,19 +210,29 @@ pub trait Encode {
 }
 
 impl Encode for ICFPExpr {
-    fn encode(&self) -> String {
-        match self {
-            ICFPExpr::Boolean(b) => b.encode(),
-            ICFPExpr::Integer(i) => format!("I{}", i.encode()),
-            ICFPExpr::String(s) => format!("S{}", s.encode()),
-            ICFPExpr::UnaryOp(op, expr) => format!("U{} {}", op.encode(), expr.encode()),
-            ICFPExpr::BinaryOp(op, left, right) => format!("B{} {} {}", op.encode(), left.encode(), right.encode()),
-            ICFPExpr::If(cond, if_true, if_false) => format!("? {} {} {}", cond.encode(), if_true.encode(), if_false.encode()),
-            ICFPExpr::Lambda(arg, body) => format!("L{} {}", arg.encode(), body.encode()),
-          ICFPExpr::VarRef(var) => format!("v{}", var.encode()),
-            ICFPExpr::Unknown { indicator: _indicator, body: _body } => unimplemented!(),
-        }
+  fn encode(&self) -> String {
+    match self {
+      ICFPExpr::Boolean(b) => b.encode(),
+      ICFPExpr::Integer(i) => format!("I{}", i.encode()),
+      ICFPExpr::String(s) => format!("S{}", s.encode()),
+      ICFPExpr::UnaryOp(op, expr) => format!("U{} {}", op.encode(), expr.encode()),
+      ICFPExpr::BinaryOp(op, left, right) => {
+        format!("B{} {} {}", op.encode(), left.encode(), right.encode())
+      }
+      ICFPExpr::If(cond, if_true, if_false) => format!(
+        "? {} {} {}",
+        cond.encode(),
+        if_true.encode(),
+        if_false.encode()
+      ),
+      ICFPExpr::Lambda(arg, body) => format!("L{} {}", arg.encode(), body.encode()),
+      ICFPExpr::VarRef(var) => format!("v{}", var.encode()),
+      ICFPExpr::Unknown {
+        indicator: _indicator,
+        body: _body,
+      } => unimplemented!(),
     }
+  }
 }
 
 impl Encode for Bool {
@@ -295,7 +305,7 @@ impl Encode for Str {
           .char_indices()
           .find_map(|(idx, x)| if x == c { Some(idx) } else { None })
           .unwrap();
-          (c_base + encoded_idx) as u8 as char
+        (c_base + encoded_idx) as u8 as char
       })
       .collect::<String>()
   }
@@ -319,59 +329,60 @@ impl Encode for BinOp {
   }
 }
 
-pub trait Decode : Sized {
-    const OPERANDS: usize;
-    fn decode(input: &str) -> color_eyre::Result<Self>;
+pub trait Decode: Sized {
+  const OPERANDS: usize;
+  fn decode(input: &str) -> color_eyre::Result<Self>;
 }
 
 impl Decode for ICFPExpr {
-    const OPERANDS: usize = 0;
+  const OPERANDS: usize = 0;
 
-    fn decode(input: &str) -> color_eyre::Result<Self> {
-        let mut expressions = input.split_whitespace();
+  fn decode(input: &str) -> color_eyre::Result<Self> {
+    let mut expressions = input.split_whitespace();
 
-        let Some(exp) = expressions.next() else {
-          return Err(anyhow!("Not enough expressions in input: {input}"));
-        };
+    let Some(exp) = expressions.next() else {
+      return Err(anyhow!("Not enough expressions in input: {input}"));
+    };
 
-      let indicator = &exp[0..1];
-      let body = &exp[1..];
+    let indicator = &exp[0..1];
+    let body = &exp[1..];
 
-      let expr = match indicator {
-        "S" => {
-          let result = Str::decode(body)?;
-          ICFPExpr::String(result)
-        },
-        "I" => {
-          ICFPExpr::Integer(Int::decode(body)?)
-        },
-        "T" => ICFPExpr::Boolean(Bool::True),
-        "F" => ICFPExpr::Boolean(Bool::False),
-        "U" => todo!("Unary Ops"),
-        "B" => todo!("Bin Ops"),
-        "?" => todo!("Ifs"),
-        "L" => todo!("Lambdas"),
-        "v" => todo!("VarRef"),
-        indicator => {
-          error!(indicator, expr = exp, "Unsupported expression");
-          return Err(anyhow!("I don't know how to decode indicator {indicator} yet."))
-        }
-      };
+    let expr = match indicator {
+      "S" => {
+        let result = Str::decode(body)?;
+        ICFPExpr::String(result)
+      }
+      "I" => ICFPExpr::Integer(Int::decode(body)?),
+      "T" => ICFPExpr::Boolean(Bool::True),
+      "F" => ICFPExpr::Boolean(Bool::False),
+      "U" => todo!("Unary Ops"),
+      "B" => todo!("Bin Ops"),
+      "?" => todo!("Ifs"),
+      "L" => todo!("Lambdas"),
+      "v" => todo!("VarRef"),
+      indicator => {
+        error!(indicator, expr = exp, "Unsupported expression");
+        return Err(anyhow!(
+          "I don't know how to decode indicator {indicator} yet."
+        ));
+      }
+    };
 
-      Ok(expr)
-    }
+    Ok(expr)
+  }
 }
 
 impl Decode for Str {
   const OPERANDS: usize = 0;
 
   fn decode(input: &str) -> color_eyre::Result<Self> {
-    let string = input.chars().map(
-      |c| {
+    let string = input
+      .chars()
+      .map(|c| {
         let idx = c as usize - (MIN_CHAR as usize);
         ALIEN_ASCII.chars().nth(idx).unwrap()
-      }
-    ).collect::<String>();
+      })
+      .collect::<String>();
 
     Ok(Str(string))
   }
@@ -392,7 +403,7 @@ impl Decode for Bool {
     match input {
       "T" => Ok(Bool::True),
       "F" => Ok(Bool::False),
-      c => Err(anyhow!("Unknown bool: {c}"))
+      c => Err(anyhow!("Unknown bool: {c}")),
     }
   }
 }
@@ -451,10 +462,8 @@ mod tests {
 
   #[test]
   fn decode_bools() {
-
     assert_eq!(Bool::decode("T").unwrap(), Bool::True);
     assert_eq!(Bool::decode("F").unwrap(), Bool::False);
     assert!(Bool::decode("D").is_err());
   }
-
 }
