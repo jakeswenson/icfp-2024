@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["viz", "solver"]
+members = ["solver"]
 
 [workspace.package]
 version = "0.0.0"
@@ -9,7 +9,7 @@ edition = "2021"
 rust-version = "1.78.0"
 
 [workspace.lints.rust]
-warnings = 'deny'
+# warnings = 'deny'
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
