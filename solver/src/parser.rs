@@ -361,8 +361,7 @@ impl Decode for ICFPExpr {
         let Some(operand) = expressions.next() else {
           return Err(anyhow!("Missing unary operand: {input}"));
         };
-
-        ICFPExpr::UnaryOp(todo!("TIM"), Box::new(ICFPExpr::decode(operand)?))
+        ICFPExpr::UnaryOp(UnOp::decode(body)?, Box::new(ICFPExpr::decode(operand)?))
       }
       'B' => {
         let Some(left) = expressions.next() else {
@@ -374,7 +373,7 @@ impl Decode for ICFPExpr {
         };
 
         ICFPExpr::BinaryOp(
-          todo!("TIM"),
+          BinOp::decode(body)?,
           Box::new(ICFPExpr::decode(left)?),
           Box::new(ICFPExpr::decode(right)?),
         )
@@ -493,6 +492,48 @@ impl ICFPExpr {
   }
 }
 
+impl Decode for UnOp {
+  const OPERANDS: usize = 1;
+
+  fn decode(input: &str) -> color_eyre::Result<Self> {
+    let op = match input {
+      "-" => UnOp::Negate,
+      "!" => UnOp::Not,
+      "#" => UnOp::StrToInt,
+      "$" => UnOp::IntToStr,
+      _ => return Err(anyhow!("Unknown unary operator: {input}")),
+    };
+
+    Ok(op)
+  }
+}
+
+impl Decode for BinOp {
+  const OPERANDS: usize = 2;
+
+  fn decode(input: &str) -> color_eyre::Result<Self> {
+    let op = match input {
+      "+" => BinOp::Add,
+      "-" => BinOp::Sub,
+      "*" => BinOp::Mul,
+      "/" => BinOp::Div,
+      "%" => BinOp::Mod,
+      "<" => BinOp::LessThan,
+      ">" => BinOp::GreaterThan,
+      "=" => BinOp::Equals,
+      "|" => BinOp::Or,
+      "&" => BinOp::And,
+      "." => BinOp::Concat,
+      "T" => BinOp::TakeChars,
+      "D" => BinOp::SkipChars,
+      "$" => BinOp::ApplyLambda,
+      _ => return Err(anyhow!("Unknown binary operator: {input}")),
+    };
+
+    Ok(op)
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -517,6 +558,107 @@ mod tests {
     assert_eq!(result.0, expected);
 
     Ok(())
+  }
+
+  #[test]
+  fn decode_unop() -> Result<()> {
+    let input = "-";
+    let expected = UnOp::Negate;
+    let result = UnOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "!";
+    let expected = UnOp::Not;
+    let result = UnOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "#";
+    let expected = UnOp::StrToInt;
+    let result = UnOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "$";
+    let expected = UnOp::IntToStr;
+    let result = UnOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    Ok(())
+  }
+
+  #[test]
+  fn decode_binop() -> Result<()> {
+    let input = "+";
+    let expected = BinOp::Add;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "-";
+    let expected = BinOp::Sub;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "*";
+    let expected = BinOp::Mul;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "/";
+    let expected = BinOp::Div;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "%";
+    let expected = BinOp::Mod;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "<";
+    let expected = BinOp::LessThan;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = ">";
+    let expected = BinOp::GreaterThan;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "=";
+    let expected = BinOp::Equals;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "|";
+    let expected = BinOp::Or;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "&";
+    let expected = BinOp::And;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = ".";
+    let expected = BinOp::Concat;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "T";
+    let expected = BinOp::TakeChars;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "D";
+    let expected = BinOp::SkipChars;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    let input = "$";
+    let expected = BinOp::ApplyLambda;
+    let result = BinOp::decode(input)?;
+    assert_eq!(result, expected);
+
+    Ok(())
+
   }
 
   #[test]
