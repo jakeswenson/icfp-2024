@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::Result;
+use crate::parser::{ICFPExpr, Encode, Decode};
 
 #[allow(dead_code)]
 mod parser;
@@ -16,7 +17,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
   Run,
-  Decode,
+  Decode { input: String },
   Send,
   Encode { string: String },
 }
@@ -33,15 +34,20 @@ async fn main() -> Result<()> {
       communicator::send_program("S'%4}).$%8".to_string()).await;  
       println!("Running!");
     }
-    Command::Decode => todo!(),
     Command::Send => todo!(),
     Command::Encode { string: s } => {
       use parser::Encode;
 
-      let x = parser::Language::String(parser::Str(s));
+      let x = ICFPExpr::String(parser::Str(s));
 
       println!("Encoded: {}", x.encode())
     }
+    Command::Decode{input} => {
+      let expr = ICFPExpr::decode(&input)?;
+      println!();
+      println!();
+      println!("Decoded: {expr:?}")
+    },
   }
 
 

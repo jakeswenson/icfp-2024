@@ -98,6 +98,7 @@
     126 176	7E	01111110	~	&#126;	&tilde;	Equivalency sign - tilde
 */
 use color_eyre::eyre::anyhow;
+use tracing_subscriber::fmt::format;
 
 const ALIEN_ASCII : &'static str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`|~ \n";
 const MIN_CHAR: char = '!'; // ASCII 33
@@ -105,14 +106,15 @@ const MAX_CHAR: char = '~'; // ASCII 126
 const NUM_BASE: usize = 94;
 
 /// ICFP Alien Language
-pub enum Language {
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum ICFPExpr {
   Boolean(Bool),
   Integer(Int),
   String(Str),
   UnaryOp(UnOp),
   BinaryOp(BinOp),
   /// ? B> I# I$ S9%3 S./
-  If(Box<Language>, Box<Language>, Box<Language>),
+  If(Box<ICFPExpr>, Box<ICFPExpr>, Box<ICFPExpr>),
   /// B$ B$ L# L$ v# B. SB%,,/ S}Q/2,$_ IK
   /// ((\v2 -> \v3 -> v2) ("Hello" . " World!")) 42
   Lambda,
@@ -121,7 +123,7 @@ pub enum Language {
   /// communication towards Earth. However, it is unknown whether more language constructs exist.
   Unknown {
     indicator: char,
-    body: Vec<String>,
+    body: String,
   },
 }
 
@@ -141,16 +143,19 @@ pub enum Language {
 /// but there seem to also be some (unknown) limits on memory usage and total runtime.
 const FUNCTION_CALL_LIMIT: usize = 1000;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub enum Bool {
   True,
   False,
 }
 
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct Int(pub usize);
 
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct Str(pub String);
 
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum UnOp {
   /// `-`	Integer negation	U- I$ -> -3
   Negate,
@@ -162,6 +167,7 @@ pub enum UnOp {
   IntToStr,
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum BinOp {
   /// `+`	Integer addition	B+ I# I$ -> 5
   Add,
@@ -197,17 +203,17 @@ pub trait Encode {
   fn encode(&self) -> String;
 }
 
-impl Encode for Language {
+impl Encode for ICFPExpr {
     fn encode(&self) -> String {
         match self {
-            Language::Boolean(b) => b.encode(),
-            Language::Integer(i) => i.encode(),
-            Language::String(s) => s.encode(),
-            Language::UnaryOp(u) => u.encode(),
-            Language::BinaryOp(_) => todo!(),
-            Language::If(_, _, _) => todo!(),
-            Language::Lambda => todo!(),
-            Language::Unknown { indicator, body } => todo!(),
+            ICFPExpr::Boolean(b) => b.encode(),
+            ICFPExpr::Integer(i) => format!("I{}", i.encode()),
+            ICFPExpr::String(s) => format!("S{}", s.encode()),
+            ICFPExpr::UnaryOp(u) => u.encode(),
+            ICFPExpr::BinaryOp(_) => todo!(),
+            ICFPExpr::If(_, _, _) => todo!(),
+            ICFPExpr::Lambda => todo!(),
+            ICFPExpr::Unknown { indicator, body } => unimplemented!(),
         }
     }
 }
@@ -224,10 +230,10 @@ impl Encode for Bool {
 // How the fuck do you do negatives?
 fn base94_encode_number(mut num: usize) -> String {
   let ascii_offset = 33; // '!' is ASCII 33
-  let mut encoded = "I".to_string();
+  let mut encoded = String::new();
 
   if num == 0 {
-    return format!("I{}", MIN_CHAR);
+    return format!("{}", MIN_CHAR);
   }
 
   while num > 0 {
@@ -271,10 +277,12 @@ impl Encode for Str {
       .0
       .chars()
       .map(|c| {
-        ALIEN_ASCII
-          .chars()
-          .nth((c as usize) - (MIN_CHAR as usize))
-          .unwrap()
+        let c_base = MIN_CHAR as usize;
+        let encoded_idx = ALIEN_ASCII
+          .char_indices()
+          .find_map(|(idx, x)| if x == c { Some(idx) } else { None })
+          .unwrap();
+          (c_base + encoded_idx) as u8 as char
       })
       .collect::<String>()
   }
@@ -303,7 +311,7 @@ pub trait Decode : Sized {
     fn decode(input: &str) -> color_eyre::Result<Self>;
 }
 
-impl Decode for Language {
+impl Decode for ICFPExpr {
     const OPERANDS: usize = 0;
 
     fn decode(input: &str) -> color_eyre::Result<Self> {
@@ -313,12 +321,12 @@ impl Decode for Language {
           return Err(anyhow!("Not enough expressions in input: {input}"));
         };
 
-        if &exp[0..1] == "S" {
-          let result = Str::decode(&exp)?;
-          println!("String: {}", result.0);
-        }
-
+      if &exp[0..1] != "S" {
         return Err(anyhow!("I don't know how to decode '{exp}' yet."))
+      }
+
+      let result = Str::decode(&exp)?;
+      Ok(ICFPExpr::String(result))
     }
 }
 
@@ -326,7 +334,95 @@ impl Decode for Str {
   const OPERANDS: usize = 0;
 
   fn decode(input: &str) -> color_eyre::Result<Self> {
-    todo!()
+    let string = input.chars().map(
+      |c| {
+        let idx = c as usize - (MIN_CHAR as usize);
+        ALIEN_ASCII.chars().nth(idx).unwrap()
+      }
+    ).collect::<String>();
+
+    Ok(Str(string))
   }
 }
 
+impl Decode for Int {
+  const OPERANDS: usize = 0;
+
+  fn decode(input: &str) -> color_eyre::Result<Self> {
+    Ok(Int(base94_decode(input)?))
+  }
+}
+
+impl Decode for Bool {
+  const OPERANDS: usize = 0;
+
+  fn decode(input: &str) -> color_eyre::Result<Self> {
+    match input {
+      "T" => Ok(Bool::True),
+      "F" => Ok(Bool::False),
+      c => Err(anyhow!("Unknown bool: {c}"))
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use color_eyre::Result;
+
+  #[test]
+  fn encode_string() {
+    let input = "Hello World!";
+    let string = Str(input.to_string()).encode();
+
+    let expected = "B%,,/}Q/2,$_";
+
+    assert_eq!(string, expected);
+  }
+
+  #[test]
+  fn decode_string() -> Result<()> {
+    let input = "B%,,/}Q/2,$_";
+    let expected = "Hello World!";
+
+    let result = Str::decode(input)?;
+    assert_eq!(result.0, expected);
+
+    Ok(())
+  }
+
+  #[test]
+  fn encode_num() {
+    let string = Int(1337).encode();
+
+    let expected = "/6";
+
+    assert_eq!(string, expected);
+  }
+
+  #[test]
+  fn decode_num() -> Result<()> {
+    let input = "B%,,/}Q/2,$_";
+    let expected = "Hello World!";
+
+    let result = Str::decode(input)?;
+    assert_eq!(result.0, expected);
+
+    Ok(())
+  }
+
+  #[test]
+  fn encode_bools() {
+    assert_eq!(Bool::True.encode(), "T");
+    assert_eq!(Bool::False.encode(), "F");
+  }
+
+  #[test]
+  fn decode_bools() {
+
+    assert_eq!(Bool::decode("T").unwrap(), Bool::True);
+    assert_eq!(Bool::decode("F").unwrap(), Bool::False);
+    assert!(Bool::decode("D").is_err());
+  }
+
+}
