@@ -325,7 +325,7 @@ impl Decode for ICFPExpr {
         return Err(anyhow!("I don't know how to decode '{exp}' yet."))
       }
 
-      let result = Str::decode(&exp)?;
+      let result = Str::decode(&exp[1..])?;
       Ok(ICFPExpr::String(result))
     }
 }
