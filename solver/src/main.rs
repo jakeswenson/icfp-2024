@@ -3,6 +3,7 @@ use color_eyre::eyre::Result;
 
 #[allow(dead_code)]
 mod parser;
+mod communicator;
 
 /// https://docs.rs/clap/latest/clap/_tutorial/chapter_2/index.html#subcommands
 /// https://docs.rs/clap/latest/clap/_derive/index.html#command-attributes
@@ -20,7 +21,8 @@ enum Command {
   Encode { string: String },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
   color_eyre::install()?;
   tracing_subscriber::fmt().init();
 
@@ -28,6 +30,7 @@ fn main() -> Result<()> {
 
   match cli.command {
     Command::Run => {
+      communicator::send_program("S'%4}).$%8".to_string()).await;  
       println!("Running!");
     }
     Command::Decode => todo!(),
@@ -40,6 +43,7 @@ fn main() -> Result<()> {
       println!("Encoded: {}", x.encode())
     }
   }
+
 
   Ok(())
 }
