@@ -98,7 +98,7 @@
     126 176	7E	01111110	~	&#126;	&tilde;	Equivalency sign - tilde
 */
 use color_eyre::eyre::anyhow;
-use tracing::error;
+use tracing::{error, warn};
 
 const ALIEN_ASCII : &'static str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`|~ \n";
 const MIN_CHAR: char = '!'; // ASCII 33
@@ -344,27 +344,74 @@ impl Decode for ICFPExpr {
       return Err(anyhow!("Not enough expressions in input: {input}"));
     };
 
-    let indicator = &exp[0..1];
+    let indicator = exp[0..1].chars().next().unwrap();
     let body = &exp[1..];
 
     let expr = match indicator {
-      "S" => {
+      'S' => {
         let result = Str::decode(body)?;
         ICFPExpr::String(result)
       }
-      "I" => ICFPExpr::Integer(Int::decode(body)?),
-      "T" => ICFPExpr::Boolean(Bool::True),
-      "F" => ICFPExpr::Boolean(Bool::False),
-      "U" => todo!("Unary Ops"),
-      "B" => todo!("Bin Ops"),
-      "?" => todo!("Ifs"),
-      "L" => todo!("Lambdas"),
-      "v" => todo!("VarRef"),
+      'I' => ICFPExpr::Integer(Int::decode(body)?),
+      'v' => ICFPExpr::VarRef(Var::decode(body)?),
+      'T' => ICFPExpr::Boolean(Bool::True),
+      'F' => ICFPExpr::Boolean(Bool::False),
+      'U' => {
+        let Some(operand) = expressions.next() else {
+          return Err(anyhow!("Missing unary operand: {input}"));
+        };
+
+        ICFPExpr::UnaryOp(todo!("TIM"), Box::new(ICFPExpr::decode(operand)?))
+      }
+      'B' => {
+        let Some(left) = expressions.next() else {
+          return Err(anyhow!("Missing bin op left: {input}"));
+        };
+
+        let Some(right) = expressions.next() else {
+          return Err(anyhow!("Missing bin op right: {input}"));
+        };
+
+        ICFPExpr::BinaryOp(
+          todo!("TIM"),
+          Box::new(ICFPExpr::decode(left)?),
+          Box::new(ICFPExpr::decode(right)?),
+        )
+      }
+      '?' => {
+        let Some(cond) = expressions.next() else {
+          return Err(anyhow!("Missing IF condition: {input}"));
+        };
+
+        let Some(if_true) = expressions.next() else {
+          return Err(anyhow!("Missing IF true branch: {input}"));
+        };
+
+        let Some(if_false) = expressions.next() else {
+          return Err(anyhow!("Missing IF false branch: {input}"));
+        };
+
+        ICFPExpr::If(
+          Box::new(ICFPExpr::decode(cond)?),
+          Box::new(ICFPExpr::decode(if_true)?),
+          Box::new(ICFPExpr::decode(if_false)?),
+        )
+      }
+      'L' => {
+        let arg_name = Var::decode(body)?;
+
+        let Some(body) = expressions.next() else {
+          return Err(anyhow!("Missing Lambda body: {input}"));
+        };
+
+        ICFPExpr::Lambda(arg_name, Box::new(ICFPExpr::decode(body)?))
+      }
       indicator => {
-        error!(indicator, expr = exp, "Unsupported expression");
-        return Err(anyhow!(
-          "I don't know how to decode indicator {indicator} yet."
-        ));
+        warn!(?indicator, expr = exp, "Unknown expression");
+        ICFPExpr::Unknown {
+          indicator,
+          body: body.to_string(),
+        }
       }
     };
 
@@ -393,6 +440,14 @@ impl Decode for Int {
 
   fn decode(input: &str) -> color_eyre::Result<Self> {
     Ok(Int(base94_decode(input)?))
+  }
+}
+
+impl Decode for Var {
+  const OPERANDS: usize = 0;
+
+  fn decode(input: &str) -> color_eyre::Result<Self> {
+    Ok(Var(base94_decode(input)?))
   }
 }
 
