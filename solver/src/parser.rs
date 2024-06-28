@@ -97,7 +97,7 @@
     125 175	7D	01111101	}	&#125;	&rcub;	Closing brace
     126 176	7E	01111110	~	&#126;	&tilde;	Equivalency sign - tilde
 */
-use color_eyre::eyre::anyhow;
+use color_eyre::{eyre::anyhow, Result};
 use tracing::{error, warn};
 
 const ALIEN_ASCII : &'static str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`|~ \n";
@@ -152,8 +152,9 @@ pub enum Bool {
   False,
 }
 
+pub type IntType = usize;
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub struct Int(pub usize);
+pub struct Int(pub IntType);
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct Var(pub usize);
@@ -262,7 +263,7 @@ fn base94_encode_number(mut num: usize) -> String {
   encoded.chars().rev().collect() // Reverse the encoded string
 }
 
-fn base94_decode(encoded: &str) -> color_eyre::Result<usize> {
+fn base94_decode(encoded: &str) -> Result<IntType> {
   let ascii_offset = 33; // '!' is ASCII 33
   let mut num: usize = 0;
 
@@ -319,13 +320,13 @@ impl Encode for UnOp {
       UnOp::StrToInt => '#',
       UnOp::IntToStr => '$',
     };
-    format!("U{}", char)
+    format!("{}", char)
   }
 }
 
 impl Encode for BinOp {
   fn encode(&self) -> String {
-    "B".to_string()
+    "".to_string()
   }
 }
 
@@ -463,6 +464,35 @@ impl Decode for Bool {
   }
 }
 
+impl ICFPExpr {
+  fn const_true() -> Self {
+    ICFPExpr::Boolean(Bool::True)
+  }
+
+  fn const_false() -> Self {
+    ICFPExpr::Boolean(Bool::False)
+  }
+
+  fn if_(
+    cond: ICFPExpr,
+    if_true: ICFPExpr,
+    if_false: ICFPExpr,
+  ) -> Self {
+    ICFPExpr::If(Box::new(cond), Box::new(if_true), Box::new(if_false))
+  }
+
+  fn lambda(
+    arg: Var,
+    body: ICFPExpr,
+  ) -> Self {
+    ICFPExpr::Lambda(arg, Box::new(body))
+  }
+
+  fn int(i: usize) -> Self {
+    ICFPExpr::Integer(Int(i))
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -520,5 +550,38 @@ mod tests {
     assert_eq!(Bool::decode("T").unwrap(), Bool::True);
     assert_eq!(Bool::decode("F").unwrap(), Bool::False);
     assert!(Bool::decode("D").is_err());
+  }
+
+  #[test]
+  fn encode_if() {
+    let expr = ICFPExpr::if_(ICFPExpr::const_true(), ICFPExpr::int(3), ICFPExpr::int(4));
+    assert_eq!(expr.encode(), "? T I$ I%");
+  }
+
+  #[test]
+  fn decode_if() -> Result<()> {
+    let input = "? T I$ I%";
+    let expected = ICFPExpr::if_(ICFPExpr::const_true(), ICFPExpr::int(3), ICFPExpr::int(4));
+
+    let result = ICFPExpr::decode(input)?;
+    assert_eq!(result, expected);
+
+    Ok(())
+  }
+
+  #[test]
+  fn encode_simple_lambda() {
+    let expr = ICFPExpr::lambda(Var(1), ICFPExpr::int(3));
+    assert_eq!(expr.encode(), "L\" I$");
+  }
+
+  #[test]
+  fn decode_simple_lambda() -> Result<()> {
+    let input = "L% I$";
+    let expected = ICFPExpr::lambda(Var(4), ICFPExpr::int(3));
+    let result = ICFPExpr::decode(input)?;
+    assert_eq!(result, expected);
+
+    Ok(())
   }
 }
