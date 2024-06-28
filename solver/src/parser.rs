@@ -98,11 +98,14 @@
     126 176	7E	01111110	~	&#126;	&tilde;	Equivalency sign - tilde
 */
 use color_eyre::eyre::anyhow;
+use tracing::error;
 
 const ALIEN_ASCII : &'static str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`|~ \n";
 const MIN_CHAR: char = '!'; // ASCII 33
 const MAX_CHAR: char = '~'; // ASCII 126
 const NUM_BASE: usize = 94;
+
+type ExprRef = Box<ICFPExpr>;
 
 /// ICFP Alien Language
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -110,13 +113,14 @@ pub enum ICFPExpr {
   Boolean(Bool),
   Integer(Int),
   String(Str),
-  UnaryOp(UnOp),
-  BinaryOp(BinOp),
+  UnaryOp(UnOp, ExprRef),
+  BinaryOp(BinOp, ExprRef, ExprRef),
   /// ? B> I# I$ S9%3 S./
-  If(Box<ICFPExpr>, Box<ICFPExpr>, Box<ICFPExpr>),
+  If(ExprRef, ExprRef, ExprRef),
   /// B$ B$ L# L$ v# B. SB%,,/ S}Q/2,$_ IK
   /// ((\v2 -> \v3 -> v2) ("Hello" . " World!")) 42
-  Lambda,
+  Lambda(Var, ExprRef),
+  VarRef(Var),
   /// The above set of language constructs are all that researchers have discovered,
   /// and it is conjectured that the Cult will never use anything else in their
   /// communication towards Earth. However, it is unknown whether more language constructs exist.
@@ -150,6 +154,9 @@ pub enum Bool {
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct Int(pub usize);
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+pub struct Var(pub usize);
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct Str(pub String);
@@ -208,10 +215,11 @@ impl Encode for ICFPExpr {
             ICFPExpr::Boolean(b) => b.encode(),
             ICFPExpr::Integer(i) => format!("I{}", i.encode()),
             ICFPExpr::String(s) => format!("S{}", s.encode()),
-            ICFPExpr::UnaryOp(u) => u.encode(),
-            ICFPExpr::BinaryOp(_) => todo!(),
-            ICFPExpr::If(_, _, _) => todo!(),
-            ICFPExpr::Lambda => todo!(),
+            ICFPExpr::UnaryOp(op, expr) => format!("U{} {}", op.encode(), expr.encode()),
+            ICFPExpr::BinaryOp(op, left, right) => format!("B{} {} {}", op.encode(), left.encode(), right.encode()),
+            ICFPExpr::If(cond, if_true, if_false) => format!("? {} {} {}", cond.encode(), if_true.encode(), if_false.encode()),
+            ICFPExpr::Lambda(arg, body) => format!("L{} {}", arg.encode(), body.encode()),
+          ICFPExpr::VarRef(var) => format!("v{}", var.encode()),
             ICFPExpr::Unknown { indicator: _indicator, body: _body } => unimplemented!(),
         }
     }
@@ -270,6 +278,12 @@ impl Encode for Int {
   }
 }
 
+impl Encode for Var {
+  fn encode(&self) -> String {
+    base94_encode_number(self.0)
+  }
+}
+
 impl Encode for Str {
   fn encode(&self) -> String {
     self
@@ -320,12 +334,31 @@ impl Decode for ICFPExpr {
           return Err(anyhow!("Not enough expressions in input: {input}"));
         };
 
-      if &exp[0..1] != "S" {
-        return Err(anyhow!("I don't know how to decode '{exp}' yet."))
-      }
+      let indicator = &exp[0..1];
+      let body = &exp[1..];
 
-      let result = Str::decode(&exp[1..])?;
-      Ok(ICFPExpr::String(result))
+      let expr = match indicator {
+        "S" => {
+          let result = Str::decode(body)?;
+          ICFPExpr::String(result)
+        },
+        "I" => {
+          ICFPExpr::Integer(Int::decode(body)?)
+        },
+        "T" => ICFPExpr::Boolean(Bool::True),
+        "F" => ICFPExpr::Boolean(Bool::False),
+        "U" => todo!("Unary Ops"),
+        "B" => todo!("Bin Ops"),
+        "?" => todo!("Ifs"),
+        "L" => todo!("Lambdas"),
+        "v" => todo!("VarRef"),
+        indicator => {
+          error!(indicator, expr = exp, "Unsupported expression");
+          return Err(anyhow!("I don't know how to decode indicator {indicator} yet."))
+        }
+      };
+
+      Ok(expr)
     }
 }
 
