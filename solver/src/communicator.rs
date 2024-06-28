@@ -2,9 +2,8 @@ use reqwest;
 use dotenvy::dotenv;
 use std::env;
 
-pub async fn send_program(prog: String) -> Result<(), reqwest::Error> {
+pub async fn send_program(prog: String) -> Result<String, reqwest::Error> {
 
-  dotenv().ok();
   let auth_token = env::var("AUTH_TOKEN").expect("AUTH_TOKEN must be set");
 
   let client = reqwest::Client::builder()
@@ -17,7 +16,5 @@ pub async fn send_program(prog: String) -> Result<(), reqwest::Error> {
     .send()
     .await?;
 
-  println!("{:?}", result.text().await?);
-
-  Ok(())
+  Ok(result.text().await?)
 }
