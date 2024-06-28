@@ -1,9 +1,8 @@
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::{anyhow, Result};
 use dotenvy::dotenv;
-use futures::future::err;
 use crate::parser::{ICFPExpr, Encode, Decode, Str};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use crate::communicator::send_program;
 
 #[allow(dead_code)]
@@ -84,12 +83,12 @@ async fn main() -> Result<()> {
 
       let result = ICFPExpr::decode(&response)?;
 
-      let ICFPExpr::String(Str(page_text)) = result else {
+      let ICFPExpr::String(Str(response_text)) = result else {
         error!(expr = ?result, "Expected string result of echo text, got");
         return Err(anyhow!("Unexpected response"))
       };
 
-      println!("Response: {page_text}");
+      println!("Response: {response_text}");
     }
   }
 

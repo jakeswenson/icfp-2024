@@ -98,7 +98,6 @@
     126 176	7E	01111110	~	&#126;	&tilde;	Equivalency sign - tilde
 */
 use color_eyre::eyre::anyhow;
-use tracing_subscriber::fmt::format;
 
 const ALIEN_ASCII : &'static str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`|~ \n";
 const MIN_CHAR: char = '!'; // ASCII 33
@@ -213,7 +212,7 @@ impl Encode for ICFPExpr {
             ICFPExpr::BinaryOp(_) => todo!(),
             ICFPExpr::If(_, _, _) => todo!(),
             ICFPExpr::Lambda => todo!(),
-            ICFPExpr::Unknown { indicator, body } => unimplemented!(),
+            ICFPExpr::Unknown { indicator: _indicator, body: _body } => unimplemented!(),
         }
     }
 }

@@ -1,5 +1,4 @@
 use reqwest;
-use dotenvy::dotenv;
 use std::env;
 
 pub async fn send_program(prog: String) -> Result<String, reqwest::Error> {
