@@ -3,7 +3,9 @@ use crate::parser::{Encode, ICFPExpr, Parsable};
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::{anyhow, Result};
 use dotenvy::dotenv;
+use std::path::PathBuf;
 use tracing::{error, info};
+use tracing_subscriber::fmt::format;
 
 mod communicator;
 mod evaluator;
@@ -26,6 +28,7 @@ enum Command {
   Get { page: String },
   Echo { text: String },
   Test,
+  Spaceship { problem: usize },
 }
 
 #[tokio::main]
@@ -116,6 +119,37 @@ async fn main() -> Result<()> {
       };
 
       println!("Response: {response_text}");
+    }
+    Command::Spaceship { problem } => {
+      let dir = env!("CARGO_MANIFEST_DIR");
+      let problems_dir = PathBuf::from(format!("{dir}/../problems/spaceship"));
+
+      let problem_path = problems_dir.join(format!("spaceship{problem}"));
+
+      let problem = std::fs::read_to_string(dbg!(&problem_path))?;
+
+      #[derive(Debug)]
+      struct Point {
+        x: i32,
+        y: i32,
+      }
+
+      let points: Vec<Point> = problem
+        .lines()
+        .map(|line| {
+          let vec = line
+            .splitn(2, " ")
+            .map(str::parse::<i32>)
+            .map(|r| r.unwrap())
+            .collect::<Vec<_>>();
+          Point {
+            x: vec[0],
+            y: vec[1],
+          }
+        })
+        .collect();
+
+      dbg!(&points);
     }
   }
 
