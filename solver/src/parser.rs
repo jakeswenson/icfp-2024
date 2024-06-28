@@ -97,22 +97,24 @@
     125 175	7D	01111101	}	&#125;	&rcub;	Closing brace
     126 176	7E	01111110	~	&#126;	&tilde;	Equivalency sign - tilde
 */
+use crate::evaluator::Environment;
 use color_eyre::{eyre::anyhow, Result};
-use tracing::{error, warn};
+use std::str::SplitWhitespace;
+use tracing::warn;
 
 const ALIEN_ASCII : &'static str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`|~ \n";
 const MIN_CHAR: char = '!'; // ASCII 33
-const MAX_CHAR: char = '~'; // ASCII 126
+const _MAX_CHAR: char = '~'; // ASCII 126
 const NUM_BASE: usize = 94;
 
-type ExprRef = Box<ICFPExpr>;
+pub type ExprRef = Box<ICFPExpr>;
 
 /// ICFP Alien Language
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ICFPExpr {
-  Boolean(Bool),
-  Integer(Int),
-  String(Str),
+  Boolean(bool),
+  Integer(IntType),
+  String(String),
   UnaryOp(UnOp, ExprRef),
   BinaryOp(BinOp, ExprRef, ExprRef),
   /// ? B> I# I$ S9%3 S./
@@ -121,6 +123,11 @@ pub enum ICFPExpr {
   /// ((\v2 -> \v3 -> v2) ("Hello" . " World!")) 42
   Lambda(Var, ExprRef),
   VarRef(Var),
+  Closure {
+    arg: Var,
+    body: ExprRef,
+    env: Environment,
+  },
   /// The above set of language constructs are all that researchers have discovered,
   /// and it is conjectured that the Cult will never use anything else in their
   /// communication towards Earth. However, it is unknown whether more language constructs exist.
@@ -128,6 +135,74 @@ pub enum ICFPExpr {
     indicator: char,
     body: String,
   },
+}
+
+impl ICFPExpr {
+  pub fn expect_int(&self) -> IntType {
+    match self {
+      ICFPExpr::Integer(i) => *i,
+      _ => panic!("Expected Int"),
+    }
+  }
+
+  pub fn expect_usize(&self) -> usize {
+    match self {
+      ICFPExpr::Integer(i) => *i as usize,
+      _ => panic!("Expected Int"),
+    }
+  }
+
+  pub fn expect_bool(&self) -> bool {
+    match self {
+      ICFPExpr::Boolean(b) => *b,
+      _ => panic!("Expected Boolean"),
+    }
+  }
+
+  pub fn expect_string(&self) -> &str {
+    match self {
+      ICFPExpr::String(s) => s.as_ref(),
+      _ => panic!("Expected Boolean"),
+    }
+  }
+
+  pub fn const_true() -> Self {
+    ICFPExpr::Boolean(true)
+  }
+
+  pub fn const_false() -> Self {
+    ICFPExpr::Boolean(false)
+  }
+
+  pub fn if_(
+    cond: ICFPExpr,
+    if_true: ICFPExpr,
+    if_false: ICFPExpr,
+  ) -> Self {
+    ICFPExpr::If(Box::new(cond), Box::new(if_true), Box::new(if_false))
+  }
+
+  pub fn lambda(
+    arg: Var,
+    body: ICFPExpr,
+  ) -> Self {
+    ICFPExpr::Lambda(arg, Box::new(body))
+  }
+
+  pub fn int(i: IntType) -> Self {
+    ICFPExpr::Integer(i)
+  }
+
+  pub fn var(v: usize) -> Self {
+    Self::VarRef(Var(v))
+  }
+
+  pub fn call(
+    lambda: ICFPExpr,
+    arg: ICFPExpr,
+  ) -> Self {
+    Self::BinaryOp(BinOp::ApplyLambda, Box::new(lambda), Box::new(arg))
+  }
 }
 
 /// As communication with Earth is complicated,
@@ -144,23 +219,12 @@ pub enum ICFPExpr {
 ///
 /// Researchers expect that the limit on the amount beta reductions is the only limit that contestants may run into,
 /// but there seem to also be some (unknown) limits on memory usage and total runtime.
-const FUNCTION_CALL_LIMIT: usize = 1000;
+const _FUNCTION_CALL_LIMIT: usize = 1000;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub enum Bool {
-  True,
-  False,
-}
-
-pub type IntType = usize;
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub struct Int(pub IntType);
+pub type IntType = i64;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct Var(pub usize);
-
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub struct Str(pub String);
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum UnOp {
@@ -232,21 +296,25 @@ impl Encode for ICFPExpr {
         indicator: _indicator,
         body: _body,
       } => unimplemented!(),
+      ICFPExpr::Closure { .. } => {
+        unreachable!("You can't encode a closure")
+      }
     }
   }
 }
 
-impl Encode for Bool {
+impl Encode for bool {
   fn encode(&self) -> String {
-    match self {
-      Bool::True => "T".to_string(),
-      Bool::False => "F".to_string(),
+    if *self {
+      "T".to_string()
+    } else {
+      "F".to_string()
     }
   }
 }
 
 // How the fuck do you do negatives?
-fn base94_encode_number(mut num: usize) -> String {
+pub fn base94_encode_number(mut num: usize) -> String {
   let ascii_offset = 33; // '!' is ASCII 33
   let mut encoded = String::new();
 
@@ -263,7 +331,7 @@ fn base94_encode_number(mut num: usize) -> String {
   encoded.chars().rev().collect() // Reverse the encoded string
 }
 
-fn base94_decode(encoded: &str) -> Result<IntType> {
+pub fn base94_decode(encoded: &str) -> Result<IntType> {
   let ascii_offset = 33; // '!' is ASCII 33
   let mut num: usize = 0;
 
@@ -280,12 +348,12 @@ fn base94_decode(encoded: &str) -> Result<IntType> {
     }
   }
 
-  Ok(num)
+  Ok(num as IntType)
 }
 
-impl Encode for Int {
+impl Encode for IntType {
   fn encode(&self) -> String {
-    base94_encode_number(self.0)
+    base94_encode_number(*self as usize)
   }
 }
 
@@ -295,10 +363,9 @@ impl Encode for Var {
   }
 }
 
-impl Encode for Str {
+impl Encode for String {
   fn encode(&self) -> String {
     self
-      .0
       .chars()
       .map(|c| {
         let c_base = MIN_CHAR as usize;
@@ -330,19 +397,18 @@ impl Encode for BinOp {
   }
 }
 
-pub trait Decode: Sized {
-  const OPERANDS: usize;
-  fn decode(input: &str) -> color_eyre::Result<Self>;
+pub trait Parsable: Sized {
+  fn parse(input: &str) -> Result<Self> {
+    Self::parse_impl(&mut input.split_whitespace())
+  }
+
+  fn parse_impl(input: &mut SplitWhitespace) -> Result<Self>;
 }
 
-impl Decode for ICFPExpr {
-  const OPERANDS: usize = 0;
-
-  fn decode(input: &str) -> color_eyre::Result<Self> {
-    let mut expressions = input.split_whitespace();
-
+impl Parsable for ICFPExpr {
+  fn parse_impl(expressions: &mut SplitWhitespace) -> Result<Self> {
     let Some(exp) = expressions.next() else {
-      return Err(anyhow!("Not enough expressions in input: {input}"));
+      return Err(anyhow!("Not enough expressions in input"));
     };
 
     let indicator = exp[0..1].chars().next().unwrap();
@@ -350,61 +416,30 @@ impl Decode for ICFPExpr {
 
     let expr = match indicator {
       'S' => {
-        let result = Str::decode(body)?;
+        let result = String::decode(body)?;
         ICFPExpr::String(result)
       }
-      'I' => ICFPExpr::Integer(Int::decode(body)?),
+      'I' => ICFPExpr::Integer(IntType::decode(body)?),
       'v' => ICFPExpr::VarRef(Var::decode(body)?),
-      'T' => ICFPExpr::Boolean(Bool::True),
-      'F' => ICFPExpr::Boolean(Bool::False),
-      'U' => {
-        let Some(operand) = expressions.next() else {
-          return Err(anyhow!("Missing unary operand: {input}"));
-        };
-        ICFPExpr::UnaryOp(UnOp::decode(body)?, Box::new(ICFPExpr::decode(operand)?))
-      }
-      'B' => {
-        let Some(left) = expressions.next() else {
-          return Err(anyhow!("Missing bin op left: {input}"));
-        };
-
-        let Some(right) = expressions.next() else {
-          return Err(anyhow!("Missing bin op right: {input}"));
-        };
-
-        ICFPExpr::BinaryOp(
-          BinOp::decode(body)?,
-          Box::new(ICFPExpr::decode(left)?),
-          Box::new(ICFPExpr::decode(right)?),
-        )
-      }
-      '?' => {
-        let Some(cond) = expressions.next() else {
-          return Err(anyhow!("Missing IF condition: {input}"));
-        };
-
-        let Some(if_true) = expressions.next() else {
-          return Err(anyhow!("Missing IF true branch: {input}"));
-        };
-
-        let Some(if_false) = expressions.next() else {
-          return Err(anyhow!("Missing IF false branch: {input}"));
-        };
-
-        ICFPExpr::If(
-          Box::new(ICFPExpr::decode(cond)?),
-          Box::new(ICFPExpr::decode(if_true)?),
-          Box::new(ICFPExpr::decode(if_false)?),
-        )
-      }
+      'T' => ICFPExpr::Boolean(true),
+      'F' => ICFPExpr::Boolean(false),
+      'U' => ICFPExpr::UnaryOp(
+        UnOp::decode(body)?,
+        Box::new(ICFPExpr::parse_impl(expressions)?),
+      ),
+      'B' => ICFPExpr::BinaryOp(
+        BinOp::decode(body)?,
+        Box::new(ICFPExpr::parse_impl(expressions)?),
+        Box::new(ICFPExpr::parse_impl(expressions)?),
+      ),
+      '?' => ICFPExpr::If(
+        Box::new(ICFPExpr::parse_impl(expressions)?),
+        Box::new(ICFPExpr::parse_impl(expressions)?),
+        Box::new(ICFPExpr::parse_impl(expressions)?),
+      ),
       'L' => {
         let arg_name = Var::decode(body)?;
-
-        let Some(body) = expressions.next() else {
-          return Err(anyhow!("Missing Lambda body: {input}"));
-        };
-
-        ICFPExpr::Lambda(arg_name, Box::new(ICFPExpr::decode(body)?))
+        ICFPExpr::Lambda(arg_name, Box::new(ICFPExpr::parse_impl(expressions)?))
       }
       indicator => {
         warn!(?indicator, expr = exp, "Unknown expression");
@@ -419,11 +454,13 @@ impl Decode for ICFPExpr {
   }
 }
 
-impl Decode for Str {
-  const OPERANDS: usize = 0;
+pub trait Decode: Sized {
+  fn decode(input: &str) -> color_eyre::Result<Self>;
+}
 
+impl Decode for String {
   fn decode(input: &str) -> color_eyre::Result<Self> {
-    let string = input
+    let result = input
       .chars()
       .map(|c| {
         let idx = c as usize - (MIN_CHAR as usize);
@@ -431,70 +468,33 @@ impl Decode for Str {
       })
       .collect::<String>();
 
-    Ok(Str(string))
+    Ok(result)
   }
 }
 
-impl Decode for Int {
-  const OPERANDS: usize = 0;
-
+impl Decode for IntType {
   fn decode(input: &str) -> color_eyre::Result<Self> {
-    Ok(Int(base94_decode(input)?))
+    Ok(base94_decode(input)?)
   }
 }
 
 impl Decode for Var {
-  const OPERANDS: usize = 0;
-
   fn decode(input: &str) -> color_eyre::Result<Self> {
-    Ok(Var(base94_decode(input)?))
+    Ok(Var(base94_decode(input)? as usize))
   }
 }
 
-impl Decode for Bool {
-  const OPERANDS: usize = 0;
-
+impl Decode for bool {
   fn decode(input: &str) -> color_eyre::Result<Self> {
     match input {
-      "T" => Ok(Bool::True),
-      "F" => Ok(Bool::False),
+      "T" => Ok(true),
+      "F" => Ok(false),
       c => Err(anyhow!("Unknown bool: {c}")),
     }
   }
 }
 
-impl ICFPExpr {
-  fn const_true() -> Self {
-    ICFPExpr::Boolean(Bool::True)
-  }
-
-  fn const_false() -> Self {
-    ICFPExpr::Boolean(Bool::False)
-  }
-
-  fn if_(
-    cond: ICFPExpr,
-    if_true: ICFPExpr,
-    if_false: ICFPExpr,
-  ) -> Self {
-    ICFPExpr::If(Box::new(cond), Box::new(if_true), Box::new(if_false))
-  }
-
-  fn lambda(
-    arg: Var,
-    body: ICFPExpr,
-  ) -> Self {
-    ICFPExpr::Lambda(arg, Box::new(body))
-  }
-
-  fn int(i: usize) -> Self {
-    ICFPExpr::Integer(Int(i))
-  }
-}
-
 impl Decode for UnOp {
-  const OPERANDS: usize = 1;
-
   fn decode(input: &str) -> color_eyre::Result<Self> {
     let op = match input {
       "-" => UnOp::Negate,
@@ -509,8 +509,6 @@ impl Decode for UnOp {
 }
 
 impl Decode for BinOp {
-  const OPERANDS: usize = 2;
-
   fn decode(input: &str) -> color_eyre::Result<Self> {
     let op = match input {
       "+" => BinOp::Add,
@@ -542,7 +540,7 @@ mod tests {
   #[test]
   fn encode_string() {
     let input = "Hello World!";
-    let string = Str(input.to_string()).encode();
+    let string = input.to_string().encode();
 
     let expected = "B%,,/}Q/2,$_";
 
@@ -554,8 +552,8 @@ mod tests {
     let input = "B%,,/}Q/2,$_";
     let expected = "Hello World!";
 
-    let result = Str::decode(input)?;
-    assert_eq!(result.0, expected);
+    let result = String::decode(input)?;
+    assert_eq!(result, expected);
 
     Ok(())
   }
@@ -658,12 +656,11 @@ mod tests {
     assert_eq!(result, expected);
 
     Ok(())
-
   }
 
   #[test]
   fn encode_num() {
-    let string = Int(1337).encode();
+    let string = 1337.encode();
 
     let expected = "/6";
 
@@ -675,23 +672,23 @@ mod tests {
     let input = "B%,,/}Q/2,$_";
     let expected = "Hello World!";
 
-    let result = Str::decode(input)?;
-    assert_eq!(result.0, expected);
+    let result = String::decode(input)?;
+    assert_eq!(result, expected);
 
     Ok(())
   }
 
   #[test]
   fn encode_bools() {
-    assert_eq!(Bool::True.encode(), "T");
-    assert_eq!(Bool::False.encode(), "F");
+    assert_eq!(true.encode(), "T");
+    assert_eq!(false.encode(), "F");
   }
 
   #[test]
   fn decode_bools() {
-    assert_eq!(Bool::decode("T").unwrap(), Bool::True);
-    assert_eq!(Bool::decode("F").unwrap(), Bool::False);
-    assert!(Bool::decode("D").is_err());
+    assert_eq!(bool::decode("T").unwrap(), true);
+    assert_eq!(bool::decode("F").unwrap(), false);
+    assert!(bool::decode("D").is_err());
   }
 
   #[test]
@@ -705,7 +702,7 @@ mod tests {
     let input = "? T I$ I%";
     let expected = ICFPExpr::if_(ICFPExpr::const_true(), ICFPExpr::int(3), ICFPExpr::int(4));
 
-    let result = ICFPExpr::decode(input)?;
+    let result = ICFPExpr::parse(input)?;
     assert_eq!(result, expected);
 
     Ok(())
@@ -721,7 +718,7 @@ mod tests {
   fn decode_simple_lambda() -> Result<()> {
     let input = "L% I$";
     let expected = ICFPExpr::lambda(Var(4), ICFPExpr::int(3));
-    let result = ICFPExpr::decode(input)?;
+    let result = ICFPExpr::parse(input)?;
     assert_eq!(result, expected);
 
     Ok(())

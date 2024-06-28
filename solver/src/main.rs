@@ -1,12 +1,12 @@
 use crate::communicator::send_program;
-use crate::parser::{Decode, Encode, ICFPExpr, Str};
+use crate::parser::{Encode, ICFPExpr, Parsable};
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::{anyhow, Result};
 use dotenvy::dotenv;
 use tracing::{error, info};
 
 mod communicator;
-#[allow(dead_code)]
+mod evaluator;
 mod parser;
 
 /// https://docs.rs/clap/latest/clap/_tutorial/chapter_2/index.html#subcommands
@@ -21,10 +21,11 @@ struct Cli {
 enum Command {
   Run,
   Decode { input: String },
-  Send,
+  Send { command: String, args: Vec<String> },
   Encode { string: String },
   Get { page: String },
   Echo { text: String },
+  Test,
 }
 
 #[tokio::main]
@@ -38,22 +39,34 @@ async fn main() -> Result<()> {
   match cli.command {
     Command::Run => {
       let input = "S'%4}).$%8";
-      info!(expr = ?ICFPExpr::decode(input)?, "Request");
+      info!(expr = ?ICFPExpr::parse(input)?, "Request");
 
       let response = communicator::send_program(input.to_string()).await?;
 
-      info!(response = ?ICFPExpr::decode(&response)?, "Response");
+      info!(response = ?ICFPExpr::parse(&response)?, "Response");
     }
-    Command::Send => todo!(),
+    Command::Send { command, args } => {
+      let args = args.join(" ");
+
+      let request = format!("{command} {args}");
+
+      let prog = ICFPExpr::String(request);
+
+      let response = send_program(prog.encode()).await?;
+
+      let result = ICFPExpr::parse(&response)?;
+
+      println!("Response: {result:?}");
+    }
     Command::Encode { string: s } => {
       use parser::Encode;
 
-      let x = ICFPExpr::String(parser::Str(s));
+      let x = ICFPExpr::String(s);
 
       println!("Encoded: {}", x.encode())
     }
     Command::Decode { input } => {
-      let expr = ICFPExpr::decode(&input)?;
+      let expr = ICFPExpr::parse(&input)?;
       println!();
       println!();
       info!(?expr, "Decoded")
@@ -61,29 +74,43 @@ async fn main() -> Result<()> {
     Command::Get { page } => {
       let request = format!("get {page}");
 
-      let prog = ICFPExpr::String(Str(request));
+      let prog = ICFPExpr::String(request);
 
       let response = send_program(prog.encode()).await?;
 
-      let result = ICFPExpr::decode(&response)?;
+      let result = ICFPExpr::parse(&response)?;
 
-      let ICFPExpr::String(Str(page_text)) = result else {
+      let ICFPExpr::String(page_text) = result else {
         error!(expr = ?result, "Expected string result of page text, got");
         return Err(anyhow!("Unexpected response"));
       };
 
       println!("Response: {page_text}");
     }
-    Command::Echo { text } => {
-      let request = format!("echo {text}");
 
-      let prog = ICFPExpr::String(Str(request));
+    Command::Test => {
+      let request = "get language_test".to_string();
+
+      let prog = ICFPExpr::String(request);
 
       let response = send_program(prog.encode()).await?;
 
-      let result = ICFPExpr::decode(&response)?;
+      let result = ICFPExpr::parse(&response)?;
 
-      let ICFPExpr::String(Str(response_text)) = result else {
+      println!("Response: {result:#?}");
+
+      println!("Result: {:?}", evaluator::eval(result))
+    }
+    Command::Echo { text } => {
+      let request = format!("echo {text}");
+
+      let prog = ICFPExpr::String(request);
+
+      let response = send_program(prog.encode()).await?;
+
+      let result = ICFPExpr::parse(&response)?;
+
+      let ICFPExpr::String(response_text) = result else {
         error!(expr = ?result, "Expected string result of echo text, got");
         return Err(anyhow!("Unexpected response"));
       };
