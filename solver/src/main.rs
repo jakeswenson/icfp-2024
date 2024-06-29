@@ -29,6 +29,18 @@ enum Command {
   Spaceship { problem: usize },
   Lambda { problem: usize },
   DL { name: String, id: usize },
+  #[clap(name = "3d")]
+  Spacetime{
+    problem: usize,
+    #[command(subcommand)]
+    command: SpaceCommand
+  },
+}
+
+#[derive(Subcommand)]
+enum SpaceCommand {
+  Solve,
+  Test { args: Vec<String> },
 }
 
 #[tokio::main]
@@ -132,6 +144,24 @@ async fn main() -> miette::Result<()> {
       let input = problems::load_input(PROBLEM_NAME, problem_id)?;
       let solution = problems::lambdaman::solve(problem_id, input)?;
       problems::submit(PROBLEM_NAME, problem_id, solution).await?
+    },
+    Command::Spacetime {
+      problem: problem_id,
+      command,
+    } => {
+      const PROBLEM_NAME: &'static str = "3d";
+      let solution = problems::load_solution(PROBLEM_NAME, problem_id)?;
+
+      match command {
+        SpaceCommand::Solve => {
+          let _solution = problems::spacetime::solve(problem_id, solution)?;
+          unimplemented!();
+          // problems::submit(PROBLEM_NAME, problem_id, solution).await?
+        },
+        SpaceCommand::Test {args} => {
+          problems::test_solution(PROBLEM_NAME, args.join(" "), solution).await?;
+        }
+      }
     }
   }
 

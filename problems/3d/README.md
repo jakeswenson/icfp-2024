@@ -151,15 +151,19 @@ After 1_000_000 ticks, the program is terminated without submitting a value, reg
 
 ## Time warp
 
-You may be able to reduce the time complexity of your program, defined as the maximum time coordinate reached, using time travel. Time travel is triggered with the (quaternary) warp operator:
+You may be able to reduce the time complexity of your program, defined as the maximum time coordinate reached, using time travel.
+Time travel is triggered with the (quaternary) warp operator:
 
 
 .  v  .
-dx  @ dy
+dx @ dy
 . dt  .
 
 
-This rolls back the history of the board by dt time steps, writes value v into the cell with coordinates (-dx, -dy) relative to the @ operator (note the negative signs!) on this past board, which means that the time coordinate of the target board is unchanged but the content is mutated. Then simulation then restarts from the modified point onward.
+This rolls back the history of the board by dt time steps, writes value v
+into the cell with coordinates (-dx, -dy) relative to the @ operator (note the negative signs!)
+on this past board, which means that the time coordinate of the target board is unchanged
+but the content is mutated. Then simulation then restarts from the modified point onward.
 
 The minimal value of dt is 1, which means stepping back one time step.
 

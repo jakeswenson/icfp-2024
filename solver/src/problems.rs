@@ -12,6 +12,8 @@ pub mod spaceship;
 #[allow(dead_code)]
 pub mod lambdaman;
 
+pub mod spacetime;
+
 #[derive(Error, Diagnostic, Debug)]
 pub enum ProblemError {
   #[error("Bad Solution: {reason}")]
@@ -77,6 +79,21 @@ pub(crate) fn load_input(
   Ok(problem)
 }
 
+pub(crate) fn load_solution(
+  problem: &str,
+  id: usize,
+) -> miette::Result<String> {
+  let dir = env!("CARGO_MANIFEST_DIR");
+  let problems_dir = PathBuf::from(format!("{dir}/../problems/{problem}"));
+
+  let problem_path = problems_dir.join(format!("{problem}{id}.solve"));
+
+  let problem = std::fs::read_to_string(dbg!(&problem_path))
+    .map_err(|e| miette!("Failed to read file: {}", e))?;
+
+  Ok(problem)
+}
+
 pub(crate) async fn submit(
   problem: &str,
   id: usize,
@@ -88,6 +105,29 @@ pub(crate) async fn submit(
   let prog = ICFPExpr::String(request);
 
   let response = send_program(prog.encode()).await?;
+
+  let result = ICFPExpr::parse(&response).map_err(|e| miette!("Error Parsing: {}", e))?;
+
+  println!("Response: {result:?}");
+
+  Ok(())
+}
+
+
+pub(crate) async fn test_solution(
+  problem: &str,
+  args: String,
+  solution: String,
+) -> miette::Result<()> {
+  let request = format!("test {problem} {args}\n{solution}");
+
+  info!(request, "Submitting solution");
+  let prog = ICFPExpr::String(request);
+
+  let response = send_program(prog.encode()).await?;
+
+  println!("{response}");
+  println!();
 
   let result = ICFPExpr::parse(&response).map_err(|e| miette!("Error Parsing: {}", e))?;
 
