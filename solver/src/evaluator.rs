@@ -1,11 +1,14 @@
 use super::parser::{
-  base94_decode, base94_encode_number, BinOp, Decode, Encode, ICFPExpr, IntType, UnOp, Var,
+  base94_decode, base94_encode_number, BinOp, Decode, DeferredDecode, Encode, ICFPExpr, IntType,
+  NatType, UnOp, Var,
 };
-use miette::Diagnostic;
+use crate::parser::DeferredDecode::Deferred;
+use miette::{Diagnostic, Report};
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::ops::Add;
+use std::sync::Arc;
 use thiserror::Error;
 
 type EvalResult<Error = EvalError> = Result<ICFPExpr, Error>;
@@ -16,7 +19,7 @@ pub fn eval(expr: ICFPExpr) -> EvalResult<miette::Report> {
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
 pub struct Environment {
-  vars: HashMap<Var, LazyExpr>,
+  vars: HashMap<Var, Arc<LazyExpr>>,
 }
 
 impl Environment {
@@ -26,19 +29,22 @@ impl Environment {
     expr: ICFPExpr,
   ) -> Self {
     let mut next = self.clone();
-
-    next.vars.insert(var, LazyExpr::new(expr, self.clone()));
-
+    next
+      .vars
+      .insert(var, Arc::new(LazyExpr::new(expr, self.clone())));
     next
   }
 
-  fn _merge(
+  fn merge(
     &self,
     other: &Self,
+    except: Var,
   ) -> Environment {
     let mut new_env = self.clone();
     new_env.vars.extend(other.vars.clone());
-
+    new_env
+      .vars
+      .insert(except, self.vars.get(&except).unwrap().clone());
     new_env
   }
 }
@@ -59,18 +65,37 @@ pub enum EvalError {
     variable: String,
   },
   #[error("Expected {expected_type}")]
-  #[diagnostic(code(eval::env::missing_var))]
+  #[diagnostic(code(eval::expected_type))]
   ExpectedType {
     expected_type: &'static str,
     #[help]
     got: String,
+  },
+  #[error("{message}")]
+  #[diagnostic(code(eval::error))]
+  ErrorContext {
+    message: &'static str,
+    #[help]
+    ctx: &'static str,
+    #[related]
+    related: Vec<EvalError>,
+  },
+  #[error("{message}")]
+  #[diagnostic(code(eval::error))]
+  DecodeError {
+    message: String,
+    #[help]
+    ctx: String,
   },
 }
 
 impl ICFPExpr {
   pub fn expect_int(&self) -> Result<IntType, EvalError> {
     match self {
-      ICFPExpr::Integer(i) => Ok(*i),
+      ICFPExpr::Integer(i) => Ok(i.decode().map_err(|e| EvalError::DecodeError {
+        message: format!("failed to decode int: {e}"),
+        ctx: format!("coded: {i:?}"),
+      })?),
       e => Err(EvalError::ExpectedType {
         expected_type: "int",
         got: format!("Got: {e:?}"),
@@ -78,24 +103,45 @@ impl ICFPExpr {
     }
   }
 
-  pub fn expect_usize(&self) -> usize {
+  pub fn expect_usize(&self) -> Result<usize, EvalError> {
     match self {
-      ICFPExpr::Integer(i) => *i as usize,
-      _ => panic!("Expected Int"),
+      ICFPExpr::Integer(i) => {
+        let value = i.decode().map_err(|e| EvalError::DecodeError {
+          message: format!("failed to decode int: {e}"),
+          ctx: format!("coded: {i:?}"),
+        })?;
+        Ok(value as usize)
+      }
+      e => Err(EvalError::ExpectedType {
+        expected_type: "usize",
+        got: format!("Got: {e:?}"),
+      }),
     }
   }
 
-  pub fn expect_bool(&self) -> bool {
+  pub fn expect_bool(&self) -> Result<bool, EvalError> {
     match self {
-      ICFPExpr::Boolean(b) => *b,
-      _ => panic!("Expected Boolean"),
+      ICFPExpr::Boolean(b) => Ok(*b),
+      e => Err(EvalError::ExpectedType {
+        expected_type: "bool",
+        got: format!("Got: {e:?}"),
+      }),
     }
   }
 
-  pub fn expect_string(&self) -> &str {
+  pub fn expect_string(&self) -> Result<&str, EvalError> {
     match self {
-      ICFPExpr::String(s) => s.as_ref(),
-      _ => panic!("Expected Boolean"),
+      ICFPExpr::String(s) => {
+        let x = s.decode().map_err(|e| EvalError::DecodeError {
+          message: format!("Failed to decode: {:?}", s),
+          ctx: "".to_string(),
+        })?;
+        Ok(x)
+      }
+      e => Err(EvalError::ExpectedType {
+        expected_type: "string",
+        got: format!("Got: {e:?}"),
+      }),
     }
   }
 }
@@ -122,7 +168,7 @@ impl Debug for LazyExpr {
     &self,
     f: &mut Formatter<'_>,
   ) -> std::fmt::Result {
-    write!(f, "lazy({:?})", self.once_cell.get())
+    write!(f, "lazy({:?}, {:?})", self.once_cell.get(), self.func.expr)
   }
 }
 
@@ -178,7 +224,14 @@ impl Evaluable for ICFPExpr {
             panic!("Wrong type ")
           };
 
-          ICFPExpr::Integer(i.wrapping_neg())
+          ICFPExpr::int(
+            i.decode()
+              .map_err(|e| EvalError::DecodeError {
+                message: format!("failed to decode int: {e}"),
+                ctx: format!("coded: {i:?}"),
+              })?
+              .wrapping_neg(),
+          )
         }
         UnOp::Not => {
           let ICFPExpr::Boolean(b) = operand.eval(env)? else {
@@ -192,78 +245,270 @@ impl Evaluable for ICFPExpr {
             panic!("Wrong type ")
           };
 
-          ICFPExpr::Integer(base94_decode(&s.encode()).unwrap())
+          match s {
+            DeferredDecode::Deferred { coded, .. } => {
+              ICFPExpr::Integer(DeferredDecode::deferred(&coded))
+            }
+            DeferredDecode::Lit(lit) => {
+              ICFPExpr::Integer(DeferredDecode::Lit(base94_decode(&lit.encode()).unwrap()))
+            }
+          }
         }
         UnOp::IntToStr => {
           let ICFPExpr::Integer(i) = operand.eval(env)? else {
-            panic!("Wrong type ")
+            panic!("Wrong type {operand:?}")
           };
 
-          ICFPExpr::String(String::decode(&base94_encode_number(i as usize)).unwrap())
+          match i {
+            DeferredDecode::Deferred { coded, .. } => {
+              ICFPExpr::String(DeferredDecode::deferred(&coded))
+            }
+            DeferredDecode::Lit(lit) => ICFPExpr::String(DeferredDecode::Lit(
+              String::decode(&base94_encode_number(lit as NatType)).unwrap(),
+            )),
+          }
         }
       },
       ICFPExpr::BinaryOp(op, left, right) => match op {
         BinOp::Add => {
-          ICFPExpr::Integer(left.eval(env)?.expect_int()? + right.eval(env)?.expect_int()?)
+          let left = left
+            .eval(env)?
+            .expect_int()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during add",
+              ctx: "left",
+              related: vec![e],
+            })?;
+          let right = right
+            .eval(env)?
+            .expect_int()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during add",
+              ctx: "right",
+              related: vec![e],
+            })?;
+          ICFPExpr::int(left + right)
         }
         BinOp::Sub => {
-          ICFPExpr::Integer(left.eval(env)?.expect_int()? - right.eval(env)?.expect_int()?)
+          println!("SubEval: {:?} in {env:?}", left);
+          let left = left
+            .eval(env)?
+            .expect_int()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during sub",
+              ctx: "left",
+              related: vec![e],
+            })?;
+          let right = right
+            .eval(env)?
+            .expect_int()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during sub",
+              ctx: "right",
+              related: vec![e],
+            })?;
+
+          ICFPExpr::int(left - right)
         }
         BinOp::Mul => {
-          ICFPExpr::Integer(left.eval(env)?.expect_int()? * right.eval(env)?.expect_int()?)
+          let left = left
+            .eval(env)?
+            .expect_int()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during mul",
+              ctx: "left",
+              related: vec![e],
+            })?;
+          let right = right
+            .eval(env)?
+            .expect_int()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during mul",
+              ctx: "right",
+              related: vec![e],
+            })?;
+
+          ICFPExpr::int(left * right)
         }
         BinOp::Div => {
-          ICFPExpr::Integer(left.eval(env)?.expect_int()? / right.eval(env)?.expect_int()?)
+          let left = left
+            .eval(env)?
+            .expect_int()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during div",
+              ctx: "left",
+              related: vec![e],
+            })?;
+          let right = right
+            .eval(env)?
+            .expect_int()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during div",
+              ctx: "right",
+              related: vec![e],
+            })?;
+
+          ICFPExpr::int(left / right)
         }
         BinOp::Mod => {
-          ICFPExpr::Integer(left.eval(env)?.expect_int()? % right.eval(env)?.expect_int()?)
+          let left = left
+            .eval(env)?
+            .expect_int()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during mod",
+              ctx: "left",
+              related: vec![e],
+            })?;
+          let right = right
+            .eval(env)?
+            .expect_int()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during mod",
+              ctx: "right",
+              related: vec![e],
+            })?;
+
+          ICFPExpr::int(left % right)
         }
         BinOp::LessThan => {
-          ICFPExpr::Boolean(left.eval(env)?.expect_int()? < right.eval(env)?.expect_int()?)
+          let left = left.eval(env)?.expect_int()?;
+          let right = right.eval(env)?.expect_int()?;
+          ICFPExpr::Boolean(left < right)
         }
         BinOp::GreaterThan => {
-          ICFPExpr::Boolean(left.eval(env)?.expect_int()? > right.eval(env)?.expect_int()?)
+          let left = left.eval(env)?.expect_int()?;
+          let right = right.eval(env)?.expect_int()?;
+          ICFPExpr::Boolean(left > right)
         }
-        BinOp::Equals => ICFPExpr::Boolean(left.eval(env)? == right.eval(env)?),
+        BinOp::Equals => {
+          let left = left.eval(env)?;
+          let right = right.eval(env)?;
+          println!("{left:?} == {right:?}");
+          ICFPExpr::Boolean(left == right)
+        }
         BinOp::Or => {
-          ICFPExpr::Boolean(left.eval(env)?.expect_bool() || right.eval(env)?.expect_bool())
+          let left = left.eval(env)?.expect_bool()?;
+          let right = right.eval(env)?.expect_bool()?;
+          ICFPExpr::Boolean(left || right)
         }
         BinOp::And => {
-          ICFPExpr::Boolean(left.eval(env)?.expect_bool() && right.eval(env)?.expect_bool())
+          let left = left.eval(env)?.expect_bool()?;
+          let right = right.eval(env)?.expect_bool()?;
+          ICFPExpr::Boolean(left && right)
         }
-        BinOp::Concat => ICFPExpr::String(
-          left
+        BinOp::Concat => {
+          let left = left
             .eval(env)?
             .expect_string()
-            .to_string()
-            .add(right.eval(env)?.expect_string()),
-        ),
-        BinOp::TakeChars => ICFPExpr::String(
-          right.eval(env)?.expect_string()[..left.eval(env)?.expect_usize()].to_string(),
-        ),
-        BinOp::SkipChars => ICFPExpr::String(
-          right.eval(env)?.expect_string()[left.eval(env)?.expect_usize()..].to_string(),
-        ),
-        BinOp::ApplyLambda => match left.eval(env)? {
-          ICFPExpr::Lambda(arg_name, body) => {
-            let mut environment = env.bind(arg_name, *right.clone());
-            body.eval(&mut environment)?
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during concat",
+              ctx: "left",
+              related: vec![e],
+            })?
+            .to_string();
+
+          let right_exp = right.eval(env)?;
+          let right = right_exp
+            .expect_string()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during concat",
+              ctx: "left",
+              related: vec![e],
+            })?;
+          ICFPExpr::str(left.add(right))
+        }
+        BinOp::TakeChars => {
+          let evaled_right = right.eval(env)?;
+          let string = evaled_right
+            .expect_string()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during take_chars",
+              ctx: "left",
+              related: vec![e],
+            })?;
+
+          let take_to = left
+            .eval(env)?
+            .expect_usize()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during take_chars",
+              ctx: "right",
+              related: vec![e],
+            })?;
+
+          ICFPExpr::str(&string[..take_to])
+        }
+        BinOp::SkipChars => {
+          let right_evaled = right.eval(env)?;
+          let string = right_evaled
+            .expect_string()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during skip_chars",
+              ctx: "left",
+              related: vec![e],
+            })?;
+
+          let start_at = left
+            .eval(env)?
+            .expect_usize()
+            .map_err(|e| EvalError::ErrorContext {
+              message: "Error during concat",
+              ctx: "right",
+              related: vec![e],
+            })?;
+
+          ICFPExpr::str(&string[start_at..])
+        }
+        BinOp::ApplyLambda => {
+          let arg_value = right.clone();
+          match left.eval(env)? {
+            ICFPExpr::Lambda(id, arg_name, body) => {
+              let mut environment = env.bind(arg_name, *arg_value);
+              println!("Eval Lambda {id}");
+              body.eval(&mut environment)?
+            }
+            ICFPExpr::Closure {
+              id: _id,
+              arg: arg_name,
+              body,
+              env: clo_env,
+            } => {
+              println!();
+              println!();
+
+              println!("Eval Closure {_id} (set {arg_name:?}: {right:?})");
+
+              println!("Current Env: {:?}", env);
+              println!("Closure Env: {:?}", clo_env);
+
+              let environment = env.bind(arg_name, *arg_value);
+              let e = environment.merge(&clo_env, arg_name);
+
+              println!("Merged Env: {environment:?}");
+              println!("Final Env: {:?}", e);
+
+              body.eval(&e)?
+            }
+            e => {
+              return Err(EvalError::ExpectedType {
+                expected_type: "lambda",
+                got: format!("Got: {e:?} from {left:?} in {env:?}"),
+              })
+            }
           }
-          ICFPExpr::Closure { arg, body, env } => {
-            let mut environment = env.bind(arg, *right.clone());
-            body.eval(&mut environment)?
-          }
-          e => panic!("Expected lambda, got {e:?}"),
-        },
+        }
       },
       ICFPExpr::If(cond, if_true, if_false) => {
-        if cond.eval(env)?.expect_bool() {
+        if cond.eval(env)?.expect_bool()? {
+          // println!("true: {cond:?} {env:?}");
           if_true.eval(env)?
         } else {
+          // println!("false: {cond:?}");
           if_false.eval(env)?
         }
       }
-      ICFPExpr::Lambda(arg, body) => ICFPExpr::Closure {
+      ICFPExpr::Lambda(id, arg, body) => ICFPExpr::Closure {
+        id: *id,
         arg: *arg,
         body: body.clone(),
         env: env.clone(),
@@ -289,11 +534,13 @@ impl Evaluable for ICFPExpr {
 #[cfg(test)]
 mod tests {
   use crate::evaluator::{eval, Environment, EvalError, Evaluable};
-  use crate::parser::{ICFPExpr, Parsable, Var};
+  use crate::parser::ICFPExpr::VarRef;
+  use crate::parser::{BinOp, ICFPExpr, Parsable, Var};
 
   #[test]
   fn simple_function_application() -> Result<(), EvalError> {
     let f = ICFPExpr::lambda(
+      0,
       Var(0),
       ICFPExpr::if_(ICFPExpr::var(0), ICFPExpr::const_true(), ICFPExpr::int(3)),
     );
@@ -315,8 +562,10 @@ mod tests {
   #[test]
   fn curried_function() -> Result<(), EvalError> {
     let f = ICFPExpr::lambda(
+      0,
       Var(0),
       ICFPExpr::lambda(
+        1,
         Var(1),
         ICFPExpr::if_(ICFPExpr::var(0), ICFPExpr::VarRef(Var(1)), ICFPExpr::int(3)),
       ),
@@ -358,7 +607,7 @@ mod tests {
   fn num_to_string() -> Result<(), miette::Report> {
     assert_eq!(
       eval(ICFPExpr::parse("U$ I4%34").map_err(|e| miette::miette!("Error parsing: {}", e))?)?,
-      ICFPExpr::String("test".to_string())
+      ICFPExpr::str("test")
     );
 
     Ok(())
@@ -369,6 +618,147 @@ mod tests {
     assert_eq!(
       eval(ICFPExpr::parse("U# S4%34").map_err(|e| miette::miette!("Error parsing: {}", e))?)?,
       ICFPExpr::int(15818151)
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn recursion() -> Result<(), EvalError> {
+    let var0 = Var(0);
+    let var1 = Var(1);
+    let var2 = Var(2);
+    let var3 = Var(3);
+    let var4 = Var(4);
+
+    let fixed = ICFPExpr::lambda(
+      1,
+      var0,
+      ICFPExpr::call(
+        ICFPExpr::lambda(2, var1, ICFPExpr::call(var0, ICFPExpr::call(var1, var1))),
+        ICFPExpr::lambda(3, var2, ICFPExpr::call(var0, ICFPExpr::call(var2, var2))),
+      ),
+    );
+
+    let dots = ICFPExpr::lambda(
+      4,
+      var3,
+      ICFPExpr::lambda(
+        5,
+        var4,
+        ICFPExpr::if_(
+          ICFPExpr::bin_op(var4, BinOp::Equals, 1),
+          ".",
+          ICFPExpr::bin_op(".", BinOp::Concat, ICFPExpr::call(var3, VarRef(var4) - 1)),
+        ),
+      ),
+    );
+
+    let env = Environment::default();
+
+    assert_eq!(
+      ICFPExpr::call(ICFPExpr::call(fixed, dots), ICFPExpr::int(10)).eval(&env)?,
+      "..........".into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn recursion_env_complex() -> Result<(), EvalError> {
+    let var0 = Var(0);
+    let var1 = Var(1);
+    let var2 = Var(2);
+    let var3 = Var(3);
+    let var4 = Var(4);
+
+    let fixed = ICFPExpr::lambda(
+      1,
+      var0,
+      ICFPExpr::call(
+        ICFPExpr::lambda(2, var1, ICFPExpr::call(var0, ICFPExpr::call(var1, var1))),
+        ICFPExpr::lambda(3, var2, ICFPExpr::call(var0, ICFPExpr::call(var2, var2))),
+      ),
+    );
+
+    let char_func = ICFPExpr::lambda(
+      10,
+      Var(10),
+      ICFPExpr::call(
+        fixed,
+        ICFPExpr::lambda(
+          4,
+          var3,
+          ICFPExpr::lambda(
+            5,
+            var4,
+            ICFPExpr::if_(
+              ICFPExpr::bin_op(var4, BinOp::Equals, 1),
+              Var(10),
+              ICFPExpr::bin_op(
+                Var(10),
+                BinOp::Concat,
+                ICFPExpr::call(var3, VarRef(var4) - 1),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    let env = Environment::default();
+
+    assert_eq!(
+      ICFPExpr::call(ICFPExpr::call(char_func, "."), ICFPExpr::int(10)).eval(&env)?,
+      "..........".into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn recursion_complex_var_reuse() -> Result<(), EvalError> {
+    let var0 = Var(0);
+    let var1 = Var(1);
+    let var2 = Var(2);
+    let var3 = Var(3);
+    let var4 = Var(4);
+
+    let fixed = ICFPExpr::lambda(
+      1,
+      var0,
+      ICFPExpr::call(
+        ICFPExpr::lambda(2, var1, ICFPExpr::call(var0, ICFPExpr::call(var1, var1))),
+        ICFPExpr::lambda(3, var2, ICFPExpr::call(var0, ICFPExpr::call(var2, var2))),
+      ),
+    );
+
+    let char_func = ICFPExpr::lambda(
+      10,
+      var0,
+      ICFPExpr::call(
+        fixed,
+        ICFPExpr::lambda(
+          4,
+          var3,
+          ICFPExpr::lambda(
+            5,
+            var4,
+            ICFPExpr::if_(
+              ICFPExpr::bin_op(var4, BinOp::Equals, 1),
+              var0,
+              ICFPExpr::bin_op(var0, BinOp::Concat, ICFPExpr::call(var3, VarRef(var4) - 1)),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    let env = Environment::default();
+
+    assert_eq!(
+      ICFPExpr::call(ICFPExpr::call(char_func, "."), ICFPExpr::int(10)).eval(&env)?,
+      "..........".into()
     );
 
     Ok(())

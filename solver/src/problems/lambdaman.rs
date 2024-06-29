@@ -112,7 +112,6 @@ fn dfs_without_recursion(
       && grid_state[row][col] != Visited
   }
 
-  let mut iter = 0;
   let mut is_backtracking = false;
 
   while let Some(State { pos, direction }) = to_visit_stack.pop_back() {
@@ -232,7 +231,7 @@ pub fn solve(
         .enumerate()
         .map(move |(colidx, col)| ((idx, colidx).clone(), col))
     })
-    .find(|(pos, char)| **char == 'L')
+    .find(|(_, char)| **char == 'L')
     .unwrap();
 
   // print_grid(&grid);

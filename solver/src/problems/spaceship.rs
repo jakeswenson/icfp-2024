@@ -223,7 +223,7 @@ pub async fn run(problem_id: usize) -> miette::Result<()> {
 
     let request = format!("solve spaceship{problem_id} {solution}");
 
-    let prog = ICFPExpr::String(request);
+    let prog = ICFPExpr::str(request);
 
     let response = send_program(prog.encode()).await?;
 
