@@ -1,9 +1,9 @@
 use crate::problems::lambdaman::Direction::Down;
 use crate::problems::ProblemError;
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::fmt::Display;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum Direction {
   Up,
   Down,
@@ -38,9 +38,21 @@ impl Direction {
       Right => Left,
     }
   }
+
+  fn move_pos(
+    self,
+    (row, col): (usize, usize),
+  ) -> (usize, usize) {
+    match self {
+      Up => (row - 1, col),
+      Down => (row + 1, col),
+      Left => (row, col - 1),
+      Right => (row, col + 1),
+    }
+  }
 }
 
-use crate::problems::lambdaman::GridState::{DontComeBack, Visited};
+use crate::problems::lambdaman::GridState::{Candy, Visited};
 use Direction::*;
 
 // Define directions with corresponding names
@@ -51,6 +63,7 @@ const DIRS: [((isize, isize), Direction); 4] = [
   ((0, 1), Right), // right
 ];
 
+#[derive(Debug)]
 struct State {
   pos: (usize, usize),          // current position (row, col)
   direction: Option<Direction>, // direction taken to reach current position
@@ -60,15 +73,13 @@ struct State {
 enum GridState {
   Candy,
   Visited,
-  DontComeBack,
-  Wall,
 }
 
 // DFS function to find the path with direction tracking without recursion
 fn dfs_without_recursion(
-  grid: &[Vec<char>],
+  grid: Vec<Vec<char>>,
   start: (usize, usize),
-) -> Option<Vec<((usize, usize), Direction)>> {
+) -> Option<Vec<Direction>> {
   let rows = grid.len();
   let cols = grid[0].len();
 
@@ -85,6 +96,8 @@ fn dfs_without_recursion(
   });
 
   state_grid[start.0][start.1] = Visited;
+  let mut map = grid.clone();
+  map[start.0][start.1] = 'S';
 
   // Function to check if a cell is within bounds and not a wall
   fn is_valid(
@@ -96,26 +109,42 @@ fn dfs_without_recursion(
     row < grid.len()
       && col < grid[0].len()
       && grid[row][col] != '#'
-      && grid_state[row][col] != DontComeBack
+      && grid_state[row][col] != Visited
   }
 
   let mut iter = 0;
+  let mut is_backtracking = false;
 
   while let Some(State { pos, direction }) = to_visit_stack.pop_back() {
     let (row, col) = pos;
 
-    // Push the current position and direction to the path
-    if let Some(dir) = direction {
-      path.push((pos, dir));
-      actual_walked_path.push(dir);
-      println!("Moved: {}", dir);
+    if map[row][col] == '.' {
+      map[row][col] = 'a';
+    } else {
+      map[row][col] = (map[row][col] as u8 + 1) as char;
     }
 
+    // Push the current position and direction to the path
+    if let Some(dir) = direction {
+      actual_walked_path.push(dir);
+      state_grid[pos.0][pos.1] = Visited;
+      if !is_backtracking {
+        path.push((pos, dir));
+      }
+    }
+
+    println!("path: {:?}", path.last());
+
+    print_grid(&map);
+    let debug_path = actual_walked_path
+      .iter()
+      .map(|dir| dir.to_string())
+      .collect::<String>();
+    println!("{}", debug_path);
     // Explore all directions
     let mut found_next = false;
     for &((dr, dc), dir_name) in &DIRS {
       if Some(dir_name.backtrack()) == direction {
-        println!("Skipping dir: {}", dir_name);
         continue;
       }
 
@@ -124,7 +153,7 @@ fn dfs_without_recursion(
 
       if new_row >= 0
         && new_col >= 0
-        && is_valid(grid, new_row as usize, new_col as usize, &state_grid)
+        && is_valid(&grid, new_row as usize, new_col as usize, &state_grid)
       {
         let new_pos = (new_row as usize, new_col as usize);
 
@@ -133,22 +162,33 @@ fn dfs_without_recursion(
           pos: new_pos,
           direction: Some(dir_name),
         });
-        state_grid[new_pos.0][new_pos.1] = Visited;
+
         found_next = true;
-      } else {
-        println!("Not valid: {:?}", (new_row, new_col))
       }
     }
 
     // If no valid move found, backtrack by popping from path
     if !found_next {
-      state_grid[pos.0][pos.1] = DontComeBack;
-      let (back_track, dir) = path.pop().unwrap();
-      println!("No move from {:?}, backtracking: {:?}", pos, back_track);
-      to_visit_stack.push_back(State {
-        pos: back_track,
-        direction: Some(dir.backtrack()),
-      });
+      map[pos.0][pos.1] = '!';
+      if has_candy(&state_grid) && !path.is_empty() {
+        let (back_track, dir): ((usize, usize), Direction) = path.pop().unwrap();
+
+        let backwards = dir.backtrack();
+        // actual_walked_path.push(backwards);
+
+        let state = State {
+          pos: backwards.move_pos(back_track),
+          direction: Some(backwards),
+        };
+
+        // println!("Backtrack: {:?}", state);
+
+        to_visit_stack.push_back(state);
+      }
+
+      is_backtracking = true;
+    } else {
+      is_backtracking = false;
     }
 
     if iter > 80 {
@@ -157,7 +197,19 @@ fn dfs_without_recursion(
     iter += 1;
   }
 
-  Some(path)
+  Some(actual_walked_path)
+}
+
+fn has_candy(grid: &[Vec<GridState>]) -> bool {
+  grid.iter().any(|row| row.iter().any(|c| *c == Candy))
+}
+
+fn print_grid(grid: &[Vec<char>]) {
+  println!("============");
+  grid
+    .iter()
+    .for_each(|line| println!("|{}|", line.iter().collect::<String>()));
+  println!("============");
 }
 
 pub fn solve(
@@ -166,22 +218,18 @@ pub fn solve(
 ) -> miette::Result<String, ProblemError> {
   let _x = input.is_empty();
 
-  let lines = input.lines().collect::<Vec<_>>();
-
-  lines.iter().for_each(|line| println!("|{}|", line));
-
-  let grid = lines
-    .iter()
+  let grid = input
+    .lines()
     .map(|row| row.chars().collect::<Vec<_>>())
     .collect::<Vec<_>>();
+
+  print_grid(&grid);
+
   let start = (0, 0);
 
-  match dfs_without_recursion(&grid, start) {
+  match dfs_without_recursion(grid, start) {
     Some(path) => {
-      let solution = path
-        .iter()
-        .map(|(p, dir)| dir.to_string())
-        .collect::<String>();
+      let solution = path.iter().map(|dir| dir.to_string()).collect::<String>();
       println!("Path: {}", solution);
 
       Ok(solution)

@@ -4,6 +4,7 @@ use crate::parser::{Encode, ICFPExpr, Parsable};
 use miette::{miette, Diagnostic};
 use std::path::PathBuf;
 use thiserror::Error;
+use tracing::info;
 
 #[allow(dead_code)]
 pub mod spaceship;
@@ -80,6 +81,7 @@ pub(crate) async fn submit(
 ) -> miette::Result<()> {
   let request = format!("solve {problem}{id} {solution}");
 
+  info!(request, "Submitting solution");
   let prog = ICFPExpr::String(request);
 
   let response = send_program(prog.encode()).await?;
