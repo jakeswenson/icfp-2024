@@ -1,10 +1,8 @@
 use crate::communicator::send_program;
-use crate::evaluator::eval;
 use crate::parser::{Encode, ICFPExpr, Parsable};
 use clap::{Parser, Subcommand};
 use dotenvy::dotenv;
 use miette::miette;
-use std::path::PathBuf;
 use tracing::{error, info};
 
 mod communicator;
@@ -122,44 +120,7 @@ async fn main() -> miette::Result<()> {
 
       println!("Result: {:?}", evaluator::eval(result))
     }
-    Command::DL { name, id } => {
-      let dir = env!("CARGO_MANIFEST_DIR");
-      let problems_dir = PathBuf::from(format!("{dir}/../problems/{name}"));
-
-      let problem_path = problems_dir.join(format!("{name}{id}"));
-      let problem_error_path = problems_dir.join(format!("{name}{id}.eval-error.txt"));
-
-      let request = format!("get {name}{id}");
-
-      let prog = ICFPExpr::String(request);
-
-      let response = send_program(prog.encode()).await?;
-
-      let parse_result = ICFPExpr::parse(&response).map_err(|e| miette!("Error Parsing: {}", e))?;
-
-      if let ICFPExpr::String(page_text) = parse_result {
-        std::fs::write(problem_path, page_text)
-          .map_err(|e| miette!("Failed to write file: {}", e))?;
-        println!("Done!");
-      } else {
-        println!("Expr: {parse_result:?}");
-        let eval_result = eval(parse_result.clone());
-
-        let Ok(result) = eval_result else {
-          std::fs::write(problem_error_path, format!("{:#?}", parse_result))
-            .map_err(|e| miette!("Failed to write file: {}", e))?;
-          eval_result?;
-          return Ok(());
-        };
-
-        let ICFPExpr::String(page_text) = result else {
-          println!("did not eval to a string!");
-          return Ok(());
-        };
-        std::fs::write(problem_path, page_text)
-          .map_err(|e| miette!("Failed to write file: {}", e))?;
-      };
-    }
+    Command::DL { name, id } => problems::download(name, id).await?,
     Command::Spaceship {
       problem: problem_id,
     } => problems::spaceship::run(problem_id).await?,
