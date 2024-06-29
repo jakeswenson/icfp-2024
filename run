@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+export RUSTFLAGS="-Awarnings"
+cargo run -- "$*"
