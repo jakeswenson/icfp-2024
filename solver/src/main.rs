@@ -7,6 +7,7 @@ use std::cmp::Ordering;
 use std::path::PathBuf;
 use tracing::{error, info};
 use tracing_subscriber::fmt::format;
+use crate::evaluator::eval;
 
 mod communicator;
 mod evaluator;
@@ -30,6 +31,7 @@ enum Command {
   Echo { text: String },
   Test,
   Spaceship { problem: usize },
+  DL { name: String, id: usize }
 }
 
 #[tokio::main]
@@ -84,26 +86,13 @@ async fn main() -> Result<()> {
 
       let result = ICFPExpr::parse(&response)?;
 
-      let ICFPExpr::String(page_text) = result else {
-        error!(expr = ?result, "Expected string result of page text, got");
-        return Err(anyhow!("Unexpected response"));
+      if let ICFPExpr::String(page_text) = result {
+        println!("\n");
+        termimad::print_inline(&page_text)
+      } else {
+        println!("Expr: {result:?}")
       };
 
-      println!("Response: {page_text}");
-    }
-
-    Command::Test => {
-      let request = "get language_test".to_string();
-
-      let prog = ICFPExpr::String(request);
-
-      let response = send_program(prog.encode()).await?;
-
-      let result = ICFPExpr::parse(&response)?;
-
-      println!("Response: {result:#?}");
-
-      println!("Result: {:?}", evaluator::eval(result))
     }
     Command::Echo { text } => {
       let request = format!("echo {text}");
@@ -120,6 +109,46 @@ async fn main() -> Result<()> {
       };
 
       println!("Response: {response_text}");
+    }
+    Command::Test => {
+      let request = "get language_test".to_string();
+
+      let prog = ICFPExpr::String(request);
+
+      let response = send_program(prog.encode()).await?;
+
+      let result = ICFPExpr::parse(&response)?;
+
+      println!("Response: {result:#?}");
+
+      println!("Result: {:?}", evaluator::eval(result))
+    }
+    Command::DL { name, id } => {
+      let dir = env!("CARGO_MANIFEST_DIR");
+      let problems_dir = PathBuf::from(format!("{dir}/../problems/{name}"));
+
+      let problem_path = problems_dir.join(format!("{name}{id}"));
+
+      let request = format!("get {name}{id}");
+
+      let prog = ICFPExpr::String(request);
+
+      let response = send_program(prog.encode()).await?;
+
+      let result = ICFPExpr::parse(&response)?;
+
+      if let ICFPExpr::String(page_text) = result {
+        std::fs::write(problem_path, page_text)?;
+        println!("Done!");
+      } else {
+        println!("Expr: {result:?}");
+        let result = eval(result);
+        let ICFPExpr::String(page_text) = result else {
+          println!("did not eval to a string!");
+          return Ok(())
+        };
+        std::fs::write(problem_path, page_text)?;
+      };
     }
     Command::Spaceship { problem } => {
       let dir = env!("CARGO_MANIFEST_DIR");
