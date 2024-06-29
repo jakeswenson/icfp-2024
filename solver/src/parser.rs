@@ -99,6 +99,7 @@
 */
 use crate::evaluator::Environment;
 use color_eyre::{eyre::anyhow, Result};
+use std::fmt::{Debug, Formatter};
 use std::str::SplitWhitespace;
 use tracing::warn;
 
@@ -110,7 +111,7 @@ const NUM_BASE: usize = 94;
 pub type ExprRef = Box<ICFPExpr>;
 
 /// ICFP Alien Language
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum ICFPExpr {
   Boolean(bool),
   Integer(IntType),
@@ -138,34 +139,6 @@ pub enum ICFPExpr {
 }
 
 impl ICFPExpr {
-  pub fn expect_int(&self) -> IntType {
-    match self {
-      ICFPExpr::Integer(i) => *i,
-      _ => panic!("Expected Int"),
-    }
-  }
-
-  pub fn expect_usize(&self) -> usize {
-    match self {
-      ICFPExpr::Integer(i) => *i as usize,
-      _ => panic!("Expected Int"),
-    }
-  }
-
-  pub fn expect_bool(&self) -> bool {
-    match self {
-      ICFPExpr::Boolean(b) => *b,
-      _ => panic!("Expected Boolean"),
-    }
-  }
-
-  pub fn expect_string(&self) -> &str {
-    match self {
-      ICFPExpr::String(s) => s.as_ref(),
-      _ => panic!("Expected Boolean"),
-    }
-  }
-
   pub fn const_true() -> Self {
     ICFPExpr::Boolean(true)
   }
@@ -205,6 +178,34 @@ impl ICFPExpr {
   }
 }
 
+impl Debug for ICFPExpr {
+  fn fmt(
+    &self,
+    f: &mut Formatter<'_>,
+  ) -> std::fmt::Result {
+    match self {
+      ICFPExpr::Boolean(t) => write!(f, "{}", t),
+      ICFPExpr::Integer(i) => write!(f, "int({})", i),
+      ICFPExpr::String(s) => write!(f, "{:?}", s),
+      ICFPExpr::UnaryOp(op, operand) => write!(f, "{:?}({:?})", op, operand),
+      ICFPExpr::BinaryOp(op, left, right) => write!(f, "({:?}).{:?}.({:?})", left, op, right),
+      ICFPExpr::If(cond, if_true, if_false) => {
+        write!(f, "if {:?} then {:?} else {:?} ", cond, if_true, if_false)
+      }
+      ICFPExpr::Lambda(var, body) => write!(f, "{:?} => \n\t{{ {:?} }}", var, body),
+      ICFPExpr::VarRef(var) => write!(f, "{:?}", var),
+      ICFPExpr::Closure { arg, body, env } => {
+        write!(f, "Closure {:?} ({:?}) => {{ {:?} }}", env, arg, body)
+      }
+      ICFPExpr::Unknown { indicator, body } => f
+        .debug_struct("Unknown")
+        .field("indicator", indicator)
+        .field("body", body)
+        .finish(),
+    }
+  }
+}
+
 /// As communication with Earth is complicated,
 /// the Cult seems to have put some restrictions on their Macroware Insight software.
 /// Specifically, message processing is aborted when exceeding 10_000_000 beta reductions.
@@ -223,8 +224,17 @@ const _FUNCTION_CALL_LIMIT: usize = 1000;
 
 pub type IntType = i64;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct Var(pub usize);
+
+impl Debug for Var {
+  fn fmt(
+    &self,
+    f: &mut Formatter<'_>,
+  ) -> std::fmt::Result {
+    write!(f, "v_{}", self.0)
+  }
+}
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum UnOp {

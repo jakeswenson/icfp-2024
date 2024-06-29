@@ -1,5 +1,5 @@
 use super::parser::{
-  base94_decode, base94_encode_number, BinOp, Decode, Encode, ICFPExpr, UnOp, Var,
+  base94_decode, base94_encode_number, BinOp, Decode, Encode, ICFPExpr, IntType, UnOp, Var,
 };
 use miette::Diagnostic;
 use std::cell::OnceCell;
@@ -58,6 +58,46 @@ pub enum EvalError {
     #[help]
     variable: String,
   },
+  #[error("Expected {expected_type}")]
+  #[diagnostic(code(eval::env::missing_var))]
+  ExpectedType {
+    expected_type: &'static str,
+    #[help]
+    got: String,
+  },
+}
+
+impl ICFPExpr {
+  pub fn expect_int(&self) -> Result<IntType, EvalError> {
+    match self {
+      ICFPExpr::Integer(i) => Ok(*i),
+      e => Err(EvalError::ExpectedType {
+        expected_type: "int",
+        got: format!("Got: {e:?}"),
+      }),
+    }
+  }
+
+  pub fn expect_usize(&self) -> usize {
+    match self {
+      ICFPExpr::Integer(i) => *i as usize,
+      _ => panic!("Expected Int"),
+    }
+  }
+
+  pub fn expect_bool(&self) -> bool {
+    match self {
+      ICFPExpr::Boolean(b) => *b,
+      _ => panic!("Expected Boolean"),
+    }
+  }
+
+  pub fn expect_string(&self) -> &str {
+    match self {
+      ICFPExpr::String(s) => s.as_ref(),
+      _ => panic!("Expected Boolean"),
+    }
+  }
 }
 
 #[derive(Clone)]
@@ -164,25 +204,25 @@ impl Evaluable for ICFPExpr {
       },
       ICFPExpr::BinaryOp(op, left, right) => match op {
         BinOp::Add => {
-          ICFPExpr::Integer(left.eval(env)?.expect_int() + right.eval(env)?.expect_int())
+          ICFPExpr::Integer(left.eval(env)?.expect_int()? + right.eval(env)?.expect_int()?)
         }
         BinOp::Sub => {
-          ICFPExpr::Integer(left.eval(env)?.expect_int() - right.eval(env)?.expect_int())
+          ICFPExpr::Integer(left.eval(env)?.expect_int()? - right.eval(env)?.expect_int()?)
         }
         BinOp::Mul => {
-          ICFPExpr::Integer(left.eval(env)?.expect_int() * right.eval(env)?.expect_int())
+          ICFPExpr::Integer(left.eval(env)?.expect_int()? * right.eval(env)?.expect_int()?)
         }
         BinOp::Div => {
-          ICFPExpr::Integer(left.eval(env)?.expect_int() / right.eval(env)?.expect_int())
+          ICFPExpr::Integer(left.eval(env)?.expect_int()? / right.eval(env)?.expect_int()?)
         }
         BinOp::Mod => {
-          ICFPExpr::Integer(left.eval(env)?.expect_int() % right.eval(env)?.expect_int())
+          ICFPExpr::Integer(left.eval(env)?.expect_int()? % right.eval(env)?.expect_int()?)
         }
         BinOp::LessThan => {
-          ICFPExpr::Boolean(left.eval(env)?.expect_int() < right.eval(env)?.expect_int())
+          ICFPExpr::Boolean(left.eval(env)?.expect_int()? < right.eval(env)?.expect_int()?)
         }
         BinOp::GreaterThan => {
-          ICFPExpr::Boolean(left.eval(env)?.expect_int() > right.eval(env)?.expect_int())
+          ICFPExpr::Boolean(left.eval(env)?.expect_int()? > right.eval(env)?.expect_int()?)
         }
         BinOp::Equals => ICFPExpr::Boolean(left.eval(env)? == right.eval(env)?),
         BinOp::Or => {
