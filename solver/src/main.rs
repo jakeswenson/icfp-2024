@@ -27,6 +27,7 @@ enum Command {
   Echo { text: String },
   Test,
   Spaceship { problem: usize },
+  Lambda { problem: usize },
   DL { name: String, id: usize },
 }
 
@@ -124,6 +125,14 @@ async fn main() -> miette::Result<()> {
     Command::Spaceship {
       problem: problem_id,
     } => problems::spaceship::run(problem_id).await?,
+    Command::Lambda {
+      problem: problem_id,
+    } => {
+      const PROBLEM_NAME: &'static str = "lambdaman";
+      let input = problems::load_input(PROBLEM_NAME, problem_id)?;
+      let solution = problems::lambdaman::solve(problem_id, input)?;
+      problems::submit(PROBLEM_NAME, problem_id, solution).await?
+    }
   }
 
   Ok(())

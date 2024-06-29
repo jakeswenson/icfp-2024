@@ -136,7 +136,7 @@ pub async fn run(problem_id: usize) -> miette::Result<()> {
     let problem = std::fs::read_to_string(dbg!(&problem_path))
       .map_err(|e| miette!("Failed to read file: {}", e))?;
 
-    let mut all_points: Vec<Point> = problem
+    let all_points: Vec<Point> = problem
       .lines()
       .map(|line| {
         let vec = line
