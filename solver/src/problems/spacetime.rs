@@ -27,7 +27,7 @@ enum OperatorArity {
 #[derive(Copy, Clone)]
 enum Parameter {
   A,
-  B
+  B,
 }
 
 #[derive(Copy, Clone)]
@@ -48,7 +48,7 @@ struct Cell {
 // End
 
 // Helpers
-fn OperatorArity(op : Operator) -> OperatorArity {
+fn OperatorArity(op: Operator) -> OperatorArity {
   match op {
     Operator::ShiftLeft => OperatorArity::Unary,
     Operator::ShiftRight => OperatorArity::Unary,
@@ -74,15 +74,19 @@ fn OperatorArity(op : Operator) -> OperatorArity {
 
 // Evaluator
 fn evaluate(grid: Vec<Vec<Cell>>) {
-  let operators : Vec<_> = grid.iter().flatten().copied().filter(|cell| {
-    if let CellValues::Op(_) = cell.value {
-      true
-    } else {
-      false
-    }
-  }).collect();
-  for t in 1 .. 1000000 {
-  }
+  let operators: Vec<_> = grid
+    .iter()
+    .flatten()
+    .copied()
+    .filter(|cell| {
+      if let CellValues::Op(_) = cell.value {
+        true
+      } else {
+        false
+      }
+    })
+    .collect();
+  for t in 1..1000000 {}
 }
 // End
 
