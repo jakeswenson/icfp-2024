@@ -3,6 +3,7 @@ use crate::parser::{Encode, ICFPExpr, Parsable};
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::{anyhow, Result};
 use dotenvy::dotenv;
+use std::cmp::Ordering;
 use std::path::PathBuf;
 use tracing::{error, info};
 use tracing_subscriber::fmt::format;
@@ -128,13 +129,22 @@ async fn main() -> Result<()> {
 
       let problem = std::fs::read_to_string(dbg!(&problem_path))?;
 
-      #[derive(Debug)]
+      #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
       struct Point {
         x: i32,
         y: i32,
       }
 
-      let points: Vec<Point> = problem
+      impl Point {
+        fn at(
+          x: i32,
+          y: i32,
+        ) -> Self {
+          Self { x, y }
+        }
+      }
+
+      let mut all_points: Vec<Point> = problem
         .lines()
         .map(|line| {
           let vec = line
@@ -149,7 +159,75 @@ async fn main() -> Result<()> {
         })
         .collect();
 
-      dbg!(&points);
+      dbg!(&all_points);
+
+      struct Spaceship {
+        vx: i32,
+        vy: i32,
+      }
+
+      fn gcd(
+        mut a: i32,
+        mut b: i32,
+      ) -> i32 {
+        while b != 0 {
+          let temp = b;
+          b = a % b;
+          a = temp;
+        }
+        a.abs() // Ensure the GCD is positive
+      }
+
+      fn normalize_to_lcm_point(point: Point) -> Point {
+        // Calculate the GCD of x and y
+        let x = point.x;
+        let y = point.y;
+        let gcd_value = gcd(x, y);
+
+        // Normalize the point by dividing each coordinate by the GCD
+        let nx = x / gcd_value;
+        let ny = y / gcd_value;
+
+        Point { x: nx, y: ny }
+      }
+
+      fn extended_taxicab_distance(
+        p1: Point,
+        p2: Point,
+      ) -> i32 {
+        let dx = (p1.x - p2.x).abs();
+        let dy = (p1.y - p2.y).abs();
+
+        // The Chebyshev distance is the maximum of these differences
+        std::cmp::max(dx, dy)
+      }
+
+      let starting_point = Point::default();
+
+      let best_option = all_points
+        .iter()
+        .map(|p| normalize_to_lcm_point(*p))
+        .min_by(|p1, p2| {
+          extended_taxicab_distance(starting_point, *p1)
+            .cmp(&extended_taxicab_distance(starting_point, *p2))
+        })
+        .unwrap();
+
+      dbg!(best_option);
+      all_points.retain(|p| *p != best_option);
+
+      let starting_point = Point::at(1, -1);
+
+      let best_option = all_points
+        .iter()
+        .map(|p| normalize_to_lcm_point(*p))
+        .min_by(|p1, p2| {
+          extended_taxicab_distance(starting_point, *p1)
+            .cmp(&extended_taxicab_distance(starting_point, *p2))
+        })
+        .unwrap();
+
+      dbg!(best_option);
     }
   }
 
