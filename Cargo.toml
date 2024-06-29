@@ -45,6 +45,11 @@ termimad = "0.29.4"
 miette = { version = "7.2.0", features = ["backtrace", "backtrace-ext", "fancy", "supports-color"] }
 thiserror = "1.0.61"
 
+[workspace.dependencies.malachite]
+version = "0.4.7"
+default-features = false
+features = [ "naturals_and_integers" ]
+
 # https://bevy-cheatbook.github.io/pitfalls/performance.html
 [profile.dev.package."*"]
 opt-level = 1

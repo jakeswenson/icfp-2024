@@ -4,7 +4,7 @@ use crate::parser::{Encode, ICFPExpr, Parsable};
 use miette::{miette, Diagnostic};
 use std::path::PathBuf;
 use thiserror::Error;
-use tracing::info;
+use tracing::{debug, info};
 
 #[allow(dead_code)]
 pub mod spaceship;
@@ -123,17 +123,21 @@ pub(crate) async fn test_solution(
 ) -> miette::Result<()> {
   let request = format!("test {problem} {args}\n{solution}");
 
-  info!(request, "Submitting solution");
+  info!(request, "Submitting TEST solution");
   let prog = ICFPExpr::str(request);
 
   let response = send_program(prog.encode()).await?;
 
-  println!("{response}");
+  debug!(raw = response, "Response");
   println!();
 
   let result = ICFPExpr::parse(&response).map_err(|e| miette!("Error Parsing: {}", e))?;
 
-  println!("Response: {result:?}");
+  info!(expr = ?result, "Parsed");
+
+  let evald = eval(result)?;
+
+  info!(expr = ?evald, "Eval'd");
 
   Ok(())
 }

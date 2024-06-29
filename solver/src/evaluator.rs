@@ -7,7 +7,7 @@ use miette::{Diagnostic, Report};
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::ops::Add;
+use std::ops::{Add, Neg};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -110,7 +110,7 @@ impl ICFPExpr {
           message: format!("failed to decode int: {e}"),
           ctx: format!("coded: {i:?}"),
         })?;
-        Ok(value as usize)
+        Ok(usize::try_from(&value).unwrap())
       }
       e => Err(EvalError::ExpectedType {
         expected_type: "usize",
@@ -230,7 +230,7 @@ impl Evaluable for ICFPExpr {
                 message: format!("failed to decode int: {e}"),
                 ctx: format!("coded: {i:?}"),
               })?
-              .wrapping_neg(),
+              .neg(),
           )
         }
         UnOp::Not => {
@@ -264,7 +264,7 @@ impl Evaluable for ICFPExpr {
               ICFPExpr::String(DeferredDecode::deferred(&coded))
             }
             DeferredDecode::Lit(lit) => ICFPExpr::String(DeferredDecode::Lit(
-              String::decode(&base94_encode_number(lit as NatType)).unwrap(),
+              String::decode(&base94_encode_number(lit)).unwrap(),
             )),
           }
         }
