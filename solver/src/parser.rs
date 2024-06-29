@@ -252,6 +252,7 @@ pub enum ICFPExpr {
   },
 }
 
+#[allow(dead_code)]
 impl ICFPExpr {
   pub fn const_true() -> Self {
     ICFPExpr::Boolean(true)
