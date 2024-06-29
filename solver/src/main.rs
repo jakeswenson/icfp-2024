@@ -22,6 +22,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
   Run,
+  TestMovesCounter,
   Decode { input: String },
   Send { command: String, args: Vec<String> },
   Encode { string: String },
@@ -50,6 +51,38 @@ async fn main() -> miette::Result<()> {
 
       info!(response = ?ICFPExpr::parse(&response)
         .map_err(|e| miette!("Error Parsing: {}", e))?, "Response");
+    }
+    Command::TestMovesCounter => {
+      println!("Hello");
+      let mut dx = 0;
+      let mut dy = 0;
+      let mut vx = 0;
+      let mut vy = 0;
+      let tx = 2;
+      let ty = -8;
+
+      fn number_of_moves_left(d: i32, t: i32, v: i32) -> i32 {
+        return (t - d / v).abs();
+      }
+
+      fn velocity_compute(d: i32, t: i32, v: i32) -> i32 {
+        let n = if d + v < t { 1 }
+          else if d + v > t { -1 }
+          else { 0 };
+        return n
+      }
+
+      while dx != tx || dy != ty {
+        let nx = velocity_compute(dx, tx, vx);
+        let ny = velocity_compute(dy, ty, vy);
+
+        vx = vx + nx;
+        vy = vy + ny; 
+        dx = dx + vx;
+        dy = dy + vy;
+
+        println!("dx: {dx}, dy: {dy}, vx: {vx}, vy: {vy}");
+      }
     }
     Command::Send { command, args } => {
       let args = args.join(" ");
