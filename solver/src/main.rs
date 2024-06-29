@@ -299,6 +299,8 @@ async fn main() -> miette::Result<()> {
 
       let all_moves = compute_moves(all_points.clone());
       all_moves.iter().for_each(|m| println!("{m}"));
+      let len = all_moves.len();
+      println!("Total moves: {len}");
 
       let best_option = all_points
         .iter()
