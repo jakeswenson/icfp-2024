@@ -263,8 +263,8 @@ async fn main() -> miette::Result<()> {
             else { return 6; }
           } else if nx == -1 {
             if ny == -1 { return 1; }
-            else if ny == 1 { return 4; }
-            else { return 7; }
+            else if ny == 1 { return 7; }
+            else { return 4; }
           } else {
             if ny == -1 { return 2; }
             else if ny == 1 { return 8; }
@@ -278,7 +278,10 @@ async fn main() -> miette::Result<()> {
         let mut vx = 0;
         let mut vy = 0;
         for target in &pts {
-          while curr.x != target.x || curr.y != target.y {
+
+          // if we are already at the target point but our velocity is not 0, then
+          // we need to move
+          loop {
             let nx = velocity_compute(curr.x, target.x, vx);
             let ny = velocity_compute(curr.y, target.y, vy);
             let move_number = compute_move(nx, ny);
@@ -292,7 +295,15 @@ async fn main() -> miette::Result<()> {
             let x = curr.x;
             let y = curr.y;
             println!("move: {move_number}, dx: {x}, dy: {y}, vx: {vx}, vy: {vy}");
+
+            if curr.x == target.x && curr.y == target.y {
+              break;
+            }
           }
+
+          let x = curr.x;
+          let y = curr.y;
+          println!("reached: {x}, {y}")
         }
         return moves;
       }
