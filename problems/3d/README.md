@@ -1,15 +1,21 @@
 
 Welcome to the 3D course!
 
-Back in the old days, when the Cult of the Bound Variable still lived on earth, programming languages were still quite primitive. For example, people wrote their programs in 2D, thereby ignoring the third dimension of time. Clearly the spacetime complexity of a program is 3-dimensional, and in this course you will learn to optimize the spacetime volume of your programs.
+Back in the old days, when the Cult of the Bound Variable still lived on earth, programming languages were still quite primitive.
+For example, people wrote their programs in 2D, thereby ignoring the third dimension of time.
+Clearly the spacetime complexity of a program is 3-dimensional,
+and in this course you will learn to optimize the spacetime volume of your programs.
 
-Below is a complete reference of the 3D language, which is a time-travel-oriented programming language. To keep the spacetime volume as small as possible, your program can use time warping to keep the time-axis small.
+Below is a complete reference of the 3D language, which is a time-travel-oriented programming language.
+To keep the spacetime volume as small as possible, your program can use time warping to keep the time-axis small.
 
 # Syntax
 
-A 3D program is a text file that represents a 2D grid of cells. The rows are separated by newlines. Within each row, cells are represented by non-whitespace tokens separated by whitespace.
+A 3D program is a text file that represents a 2D grid of cells.
+The rows are separated by newlines. Within each row, cells are represented by non-whitespace tokens separated by whitespace.
 
-It is human-friendly but not mandatory to keep the columns aligned by adding extra whitespace between cells; each row is processed separately. Rows do not have to have the same length; short rows are assumed to be left-aligned: empty on the right.
+It is human-friendly but not mandatory to keep the columns aligned by adding extra whitespace between cells;
+each row is processed separately. Rows do not have to have the same length; short rows are assumed to be left-aligned: empty on the right.
 
 ## Available tokens
 
@@ -22,15 +28,21 @@ See [the operator reference](#operator-reference) for their meaning.
 
 # Semantics
 
-The board is an infinite 2D grid of cells. Each cell is either empty or contains a value. A value is either an arbitrarily sized integer or an operator.
+The board is an infinite 2D grid of cells. Each cell is either empty or contains a value.
+A value is either an arbitrarily sized integer or an operator.
 
-Programs cannot contain arbitrarily sized integer literals. Integer literals can only range between -99 and 99, inclusive. This is a source-code-only restriction. At runtime, programs are free to compute with integers of arbitrary size.
+Programs cannot contain arbitrarily sized integer literals. Integer literals can only range between -99 and 99, inclusive.
+This is a source-code-only restriction. At runtime, programs are free to compute with integers of arbitrary size.
 
 ## Basic 2D reduction
 
-Time flows in discrete units, called ticks. The initial board is identical to the source code and its time coordinate is t=1. With each tick, we perform one round of reductions across the whole board simultaneously.
+Time flows in discrete units, called ticks.
+The initial board is identical to the source code and its time coordinate is t=1.
+With each tick, we perform one round of reductions across the whole board simultaneously.
 
-[The operator reference](#operator-reference) defines the reduction rules of all operators. Generally, all operators perform local rewriting on their surroundings. For example, the "move right" operator > rewrites x > . to . > x.
+[The operator reference](#operator-reference) defines the reduction rules of all operators.
+Generally, all operators perform local rewriting on their surroundings.
+For example, the "move right" operator > rewrites x > . to . > x.
 
 Operators are values, too, so + > . reduces to . > +. This way, it's also possible to shuffle operators around.
 
@@ -43,7 +55,8 @@ x - .  ~> .  -  x-y
 
 Operators A and B are replaced with the input values (if any) after parsing. This mechanism is used to give different inputs to your program.
 
-There is operator S, which you can overwrite to terminate the program and submit the answer. It is an error to submit multiple different values, submitting the same value simultaneously multiple times is fine.
+There is operator S, which you can overwrite to terminate the program and submit the answer.
+It is an error to submit multiple different values, submitting the same value simultaneously multiple times is fine.
 
 Some reduction principles:
 
