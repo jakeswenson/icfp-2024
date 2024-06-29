@@ -15,3 +15,5 @@ Cargo.lock
 
 # dotenvy
 .env
+
+problems/**/*.eval-error.txt

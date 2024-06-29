@@ -17,6 +17,8 @@ tracing-subscriber.workspace = true
 serde_json.workspace = true
 reqwest.workspace = true
 termimad.workspace = true
+miette= { workspace = true, features = ["fancy"] }
+thiserror.workspace = true
 
 [lints]
 workspace = true
