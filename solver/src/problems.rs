@@ -27,12 +27,15 @@ pub(crate) async fn download(
 
   let problem_path = problems_dir.join(format!("{name}{id}"));
   let problem_error_path = problems_dir.join(format!("{name}{id}.eval-error.txt"));
+  let problem_raw_path = problems_dir.join(format!("{name}{id}.raw"));
 
   let request = format!("get {name}{id}");
 
   let prog = ICFPExpr::String(request);
 
   let response = send_program(prog.encode()).await?;
+
+  std::fs::write(problem_raw_path, &response).map_err(|e| miette!("Failed to write raw file: {}", e))?;
 
   let parse_result = ICFPExpr::parse(&response).map_err(|e| miette!("Error Parsing: {}", e))?;
 
