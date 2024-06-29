@@ -22,7 +22,6 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
   Run,
-  TestMovesCounter,
   Decode { input: String },
   Send { command: String, args: Vec<String> },
   Encode { string: String },
@@ -51,38 +50,6 @@ async fn main() -> miette::Result<()> {
 
       info!(response = ?ICFPExpr::parse(&response)
         .map_err(|e| miette!("Error Parsing: {}", e))?, "Response");
-    }
-    Command::TestMovesCounter => {
-      println!("Hello");
-      let mut dx = 0;
-      let mut dy = 0;
-      let mut vx = 0;
-      let mut vy = 0;
-      let tx = 2;
-      let ty = -8;
-
-      fn number_of_moves_left(d: i32, t: i32, v: i32) -> i32 {
-        return (t - d / v).abs();
-      }
-
-      fn velocity_compute(d: i32, t: i32, v: i32) -> i32 {
-        let n = if d + v < t { 1 }
-          else if d + v > t { -1 }
-          else { 0 };
-        return n
-      }
-
-      while dx != tx || dy != ty {
-        let nx = velocity_compute(dx, tx, vx);
-        let ny = velocity_compute(dy, ty, vy);
-
-        vx = vx + nx;
-        vy = vy + ny; 
-        dx = dx + vx;
-        dy = dy + vy;
-
-        println!("dx: {dx}, dy: {dy}, vx: {vx}, vy: {vy}");
-      }
     }
     Command::Send { command, args } => {
       let args = args.join(" ");
@@ -276,6 +243,62 @@ async fn main() -> miette::Result<()> {
       }
 
       let starting_point = Point::default();
+
+      fn compute_moves(pts: Vec<Point>) -> Vec<i32> {
+        fn number_of_moves_left(d: i32, t: i32, v: i32) -> i32 {
+          return (t - d / v).abs();
+        }
+
+        fn velocity_compute(d: i32, t: i32, v: i32) -> i32 {
+          let n = if d + v < t { 1 }
+            else if d + v > t { -1 }
+            else { 0 };
+          return n
+        }
+
+        fn compute_move(nx: i32, ny: i32) -> i32 {
+          if nx == 1 {
+            if ny == -1 { return 3; }
+            else if ny == 1 { return 9; }
+            else { return 6; }
+          } else if nx == -1 {
+            if ny == -1 { return 1; }
+            else if ny == 1 { return 4; }
+            else { return 7; }
+          } else {
+            if ny == -1 { return 2; }
+            else if ny == 1 { return 8; }
+            else { return 5; }
+          }
+        }
+
+        let mut moves = Vec::new();
+        let mut curr = Point::default();
+
+        let mut vx = 0;
+        let mut vy = 0;
+        for target in &pts {
+          while curr.x != target.x || curr.y != target.y {
+            let nx = velocity_compute(curr.x, target.x, vx);
+            let ny = velocity_compute(curr.y, target.y, vy);
+            let move_number = compute_move(nx, ny);
+
+            vx = vx + nx;
+            vy = vy + ny; 
+            curr.x = curr.x + vx;
+            curr.y = curr.y + vy;
+            moves.push(move_number);
+
+            let x = curr.x;
+            let y = curr.y;
+            println!("move: {move_number}, dx: {x}, dy: {y}, vx: {vx}, vy: {vy}");
+          }
+        }
+        return moves;
+      }
+
+      let all_moves = compute_moves(all_points.clone());
+      all_moves.iter().for_each(|m| println!("{m}"));
 
       let best_option = all_points
         .iter()
