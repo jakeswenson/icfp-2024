@@ -133,14 +133,14 @@ fn dfs_without_recursion(
       }
     }
 
-    println!("path: {:?}", path.last());
-
-    print_grid(&map);
-    let debug_path = actual_walked_path
-      .iter()
-      .map(|dir| dir.to_string())
-      .collect::<String>();
-    println!("{}", debug_path);
+    // println!("path: {:?}", path.last());
+    //
+    // print_grid(&map);
+    // let debug_path = actual_walked_path
+    //   .iter()
+    //   .map(|dir| dir.to_string())
+    //   .collect::<String>();
+    // println!("{}", debug_path);
     // Explore all directions
     let mut found_next = false;
     for &((dr, dc), dir_name) in &DIRS {
@@ -191,10 +191,10 @@ fn dfs_without_recursion(
       is_backtracking = false;
     }
 
-    if iter > 80 {
-      break;
-    }
-    iter += 1;
+    // if iter > 80 {
+    //   break;
+    // }
+    // iter += 1;
   }
 
   Some(actual_walked_path)
@@ -223,9 +223,19 @@ pub fn solve(
     .map(|row| row.chars().collect::<Vec<_>>())
     .collect::<Vec<_>>();
 
-  print_grid(&grid);
+  let (start, _): ((usize, usize), &char) = grid
+    .iter()
+    .enumerate()
+    .flat_map(|(idx, row): (usize, _)| {
+      row
+        .iter()
+        .enumerate()
+        .map(move |(colidx, col)| ((idx, colidx).clone(), col))
+    })
+    .find(|(pos, char)| **char == 'L')
+    .unwrap();
 
-  let start = (0, 0);
+  // print_grid(&grid);
 
   match dfs_without_recursion(grid, start) {
     Some(path) => {

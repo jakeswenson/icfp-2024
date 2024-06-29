@@ -222,7 +222,7 @@ impl Debug for ICFPExpr {
 /// but there seem to also be some (unknown) limits on memory usage and total runtime.
 const _FUNCTION_CALL_LIMIT: usize = 1000;
 
-pub type IntType = i64;
+pub type IntType = i128;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct Var(pub usize);
