@@ -19,6 +19,7 @@ reqwest.workspace = true
 termimad.workspace = true
 miette= { workspace = true, features = ["fancy"] }
 thiserror.workspace = true
+malachite.workspace = true
 
 [lints]
 workspace = true

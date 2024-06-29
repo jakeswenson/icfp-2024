@@ -98,12 +98,15 @@
     126 176	7E	01111110	~	&#126;	&tilde;	Equivalency sign - tilde
 */
 use crate::evaluator::Environment;
+use malachite::num::arithmetic::traits::{Mod, Pow};
+use malachite::num::basic::traits::Zero;
 use miette::{miette, LabeledSpan, Result};
 use std::cell::OnceCell;
 use std::fmt::{Debug, Formatter};
+use std::ops::DivAssign;
 use std::str::SplitWhitespace;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tracing::warn;
+use tracing::{debug, warn};
 
 const ALIEN_ASCII : &'static str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`|~ \n";
 const MIN_CHAR: char = '!'; // ASCII 33
@@ -142,7 +145,7 @@ impl<T: Clone> Clone for DeferredDecode<T> {
   }
 }
 
-impl<T: PartialEq> PartialEq for DeferredDecode<T> {
+impl PartialEq for DeferredDecode<IntType> {
   fn eq(
     &self,
     other: &Self,
@@ -152,12 +155,34 @@ impl<T: PartialEq> PartialEq for DeferredDecode<T> {
         coded == right
       }
       (DeferredDecode::Lit(left), DeferredDecode::Lit(right)) => left == right,
-      _ => false,
+      (def @ DeferredDecode::Deferred { .. }, DeferredDecode::Lit(l))
+      | (DeferredDecode::Lit(l), def @ DeferredDecode::Deferred { .. }) => {
+        def.decode().unwrap() == l.clone()
+      }
     }
   }
 }
 
-impl<T: Eq> Eq for DeferredDecode<T> {}
+impl PartialEq for DeferredDecode<String> {
+  fn eq(
+    &self,
+    other: &Self,
+  ) -> bool {
+    match (self, other) {
+      (DeferredDecode::Deferred { coded, .. }, DeferredDecode::Deferred { coded: right, .. }) => {
+        coded == right
+      }
+      (DeferredDecode::Lit(left), DeferredDecode::Lit(right)) => left == right,
+      (def @ DeferredDecode::Deferred { .. }, DeferredDecode::Lit(l))
+      | (DeferredDecode::Lit(l), def @ DeferredDecode::Deferred { .. }) => {
+        def.decode().unwrap() == l
+      }
+    }
+  }
+}
+
+impl Eq for DeferredDecode<String> {}
+impl Eq for DeferredDecode<IntType> {}
 
 impl DeferredDecode<IntType> {
   pub fn decode(&self) -> Result<IntType> {
@@ -168,11 +193,11 @@ impl DeferredDecode<IntType> {
           move || base94_decode(&clone)
         });
         match res {
-          Ok(i) => Ok(*i),
+          Ok(i) => Ok(i.clone()),
           Err(e) => Err(miette!("Failed to decode: {e:?}")),
         }
       }
-      DeferredDecode::Lit(lit) => Ok(*lit),
+      DeferredDecode::Lit(lit) => Ok(lit.clone()),
     }
   }
 }
@@ -299,8 +324,8 @@ impl ICFPExpr {
     ICFPExpr::Lambda(id, arg, Box::new(body))
   }
 
-  pub fn int(i: IntType) -> Self {
-    ICFPExpr::Integer(DeferredDecode::Lit(i))
+  pub fn int(i: impl Into<IntType>) -> Self {
+    ICFPExpr::Integer(DeferredDecode::Lit(i.into()))
   }
 
   pub fn var(v: usize) -> Self {
@@ -331,9 +356,9 @@ impl From<String> for ICFPExpr {
   }
 }
 
-impl From<IntType> for ICFPExpr {
-  fn from(value: IntType) -> Self {
-    Self::Integer(DeferredDecode::Lit(value))
+impl From<i64> for ICFPExpr {
+  fn from(value: i64) -> Self {
+    Self::Integer(DeferredDecode::Lit(value.into()))
   }
 }
 
@@ -439,7 +464,7 @@ impl Debug for ICFPExpr {
 /// but there seem to also be some (unknown) limits on memory usage and total runtime.
 const _FUNCTION_CALL_LIMIT: usize = 1000;
 
-pub type IntType = i64;
+pub type IntType = malachite::Integer;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct Var(pub usize);
@@ -541,7 +566,7 @@ impl Encode for bool {
 }
 
 // How the fuck do you do negatives?
-pub fn base94_encode_number(mut num: NatType) -> String {
+pub fn base94_encode_number(mut num: IntType) -> String {
   let ascii_offset = 33; // '!' is ASCII 33
   let mut encoded = String::new();
 
@@ -550,9 +575,11 @@ pub fn base94_encode_number(mut num: NatType) -> String {
   }
 
   while num > 0 {
-    let remainder = num % NUM_BASE;
-    num /= NUM_BASE;
-    encoded.push((remainder as u8 + ascii_offset) as char);
+    let base: IntType = NUM_BASE.into();
+    let rem: IntType = num.clone().mod_op(&base);
+    let remainder: u8 = i64::try_from(&rem).unwrap() as u8;
+    num.div_assign(base);
+    encoded.push((remainder + ascii_offset) as char);
   }
 
   encoded.chars().rev().collect() // Reverse the encoded string
@@ -560,18 +587,19 @@ pub fn base94_encode_number(mut num: NatType) -> String {
 
 pub fn base94_decode(encoded: &str) -> Result<IntType> {
   let ascii_offset = 33; // '!' is ASCII 33
-  let mut num: NatType = 0;
+  let mut num: malachite::Integer = malachite::Integer::ZERO;
 
   for (i, char) in encoded.chars().rev().enumerate() {
     let value = (char as NatType).checked_sub(ascii_offset);
     if let Some(digit) = value {
-      if digit < NUM_BASE {
-        println!("{i}");
-        let pow = NUM_BASE.pow(i as u32);
-        println!("digit: {digit}, pow: {pow}");
-        num += digit
-          .checked_mul(pow)
-          .ok_or(miette!("Encoded Number is too big: {encoded}"))?;
+      let digit = malachite::Integer::from(digit);
+      let base = IntType::from(NUM_BASE);
+      if digit < base {
+        debug!(i, "^Power");
+        let pow = base.pow(i as u64);
+        debug!(?digit, ?pow, "digit*pow");
+        num += digit * pow;
+        //.ok_or(miette!("Encoded Number is too big: {encoded}"))?;
       } else {
         return Err(miette!(
           labels = vec![LabeledSpan::at(i..i + 1, "invalid"),],
@@ -611,13 +639,19 @@ impl Encode for DeferredDecode<IntType> {
 
 impl Encode for IntType {
   fn encode(&self) -> String {
-    base94_encode_number(*self as NatType)
+    base94_encode_number(self.clone())
+  }
+}
+
+impl Encode for i64 {
+  fn encode(&self) -> String {
+    base94_encode_number((*self).into())
   }
 }
 
 impl Encode for Var {
   fn encode(&self) -> String {
-    base94_encode_number(self.0 as NatType)
+    base94_encode_number(self.0.into())
   }
 }
 
@@ -742,7 +776,7 @@ impl Decode for IntType {
 
 impl Decode for Var {
   fn decode(input: &str) -> Result<Self> {
-    Ok(Var(base94_decode(input)? as usize))
+    Ok(Var(NatType::try_from(&base94_decode(input)?).unwrap()))
   }
 }
 

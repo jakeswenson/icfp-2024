@@ -64,7 +64,9 @@ enum SpaceCommand {
 #[tokio::main]
 async fn main() -> miette::Result<()> {
   miette::set_panic_hook();
-  tracing_subscriber::fmt().init();
+  tracing_subscriber::fmt()
+    .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+    .init();
   dotenv().ok();
 
   let cli = Cli::parse();
