@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use crate::communicator::send_program;
 use crate::evaluator::eval;
 use crate::parser::{Encode, ICFPExpr, Parsable};
@@ -169,7 +170,7 @@ async fn main() -> miette::Result<()> {
       let problem = std::fs::read_to_string(dbg!(&problem_path))
         .map_err(|e| miette!("Failed to read file: {}", e))?;
 
-      #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+      #[derive(Default, Copy, Clone, PartialEq, Eq)]
       struct Point {
         x: i32,
         y: i32,
@@ -181,6 +182,12 @@ async fn main() -> miette::Result<()> {
           y: i32,
         ) -> Self {
           Self { x, y }
+        }
+      }
+
+      impl Debug for Point {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+          write!(f, "({}, {})", self.x, self.y)
         }
       }
 
@@ -198,6 +205,8 @@ async fn main() -> miette::Result<()> {
           }
         })
         .collect();
+
+      all_points.dedup();
 
       dbg!(&all_points);
 
@@ -287,7 +296,7 @@ async fn main() -> miette::Result<()> {
             let move_number = compute_move(nx, ny);
 
             vx = vx + nx;
-            vy = vy + ny; 
+            vy = vy + ny;
             curr.x = curr.x + vx;
             curr.y = curr.y + vy;
             moves.push(move_number);
@@ -309,7 +318,9 @@ async fn main() -> miette::Result<()> {
       }
 
       let all_moves = compute_moves(all_points.clone());
-      all_moves.iter().for_each(|m| println!("{m}"));
+      println!();
+      all_moves.iter().for_each(|m| print!("{m}"));
+      println!();
       let len = all_moves.len();
       println!("Total moves: {len}");
 
