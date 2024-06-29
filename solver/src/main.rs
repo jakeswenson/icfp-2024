@@ -20,20 +20,38 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
   Run,
-  Decode { input: String },
-  Send { command: String, args: Vec<String> },
-  Encode { string: String },
-  Get { page: String },
-  Echo { text: String },
+  Decode {
+    input: String,
+  },
+  Send {
+    command: String,
+    args: Vec<String>,
+  },
+  Encode {
+    string: String,
+  },
+  Get {
+    page: String,
+  },
+  Echo {
+    text: String,
+  },
   Test,
-  Spaceship { problem: usize },
-  Lambda { problem: usize },
-  DL { name: String, id: usize },
+  Spaceship {
+    problem: usize,
+  },
+  Lambda {
+    problem: usize,
+  },
+  DL {
+    name: String,
+    id: usize,
+  },
   #[clap(name = "3d")]
-  Spacetime{
+  Spacetime {
     problem: usize,
     #[command(subcommand)]
-    command: SpaceCommand
+    command: SpaceCommand,
   },
 }
 
@@ -67,7 +85,7 @@ async fn main() -> miette::Result<()> {
 
       let request = format!("{command} {args}");
 
-      let prog = ICFPExpr::String(request);
+      let prog = ICFPExpr::str(request);
 
       let response = send_program(prog.encode()).await?;
 
@@ -78,7 +96,7 @@ async fn main() -> miette::Result<()> {
     Command::Encode { string: s } => {
       use parser::Encode;
 
-      let x = ICFPExpr::String(s);
+      let x = ICFPExpr::str(s);
 
       println!("Encoded: {}", x.encode())
     }
@@ -91,15 +109,16 @@ async fn main() -> miette::Result<()> {
     Command::Get { page } => {
       let request = format!("get {page}");
 
-      let prog = ICFPExpr::String(request);
+      let prog = ICFPExpr::str(request);
 
       let response = send_program(prog.encode()).await?;
 
-      let result = ICFPExpr::parse(&response).map_err(|e| miette!("Error Parsing: {}", e))?;
+      let result =
+        ICFPExpr::parse(&response).map_err(|e| miette!(help = response, "Error Parsing: {}", e))?;
 
       if let ICFPExpr::String(page_text) = result {
         println!("\n");
-        termimad::print_inline(&page_text)
+        termimad::print_inline(&page_text.decode()?)
       } else {
         println!("Expr: {result:?}")
       };
@@ -107,7 +126,7 @@ async fn main() -> miette::Result<()> {
     Command::Echo { text } => {
       let request = format!("echo {text}");
 
-      let prog = ICFPExpr::String(request);
+      let prog = ICFPExpr::str(request);
 
       let response = send_program(prog.encode()).await?;
 
@@ -118,12 +137,14 @@ async fn main() -> miette::Result<()> {
         return Err(miette!("Unexpected response"));
       };
 
-      println!("Response: {response_text}");
+      let decoded_response = response_text.decode()?;
+
+      println!("Response: {decoded_response}");
     }
     Command::Test => {
       let request = "get language_test".to_string();
 
-      let prog = ICFPExpr::String(request);
+      let prog = ICFPExpr::str(request);
 
       let response = send_program(prog.encode()).await?;
 
@@ -144,7 +165,7 @@ async fn main() -> miette::Result<()> {
       let input = problems::load_input(PROBLEM_NAME, problem_id)?;
       let solution = problems::lambdaman::solve(problem_id, input)?;
       problems::submit(PROBLEM_NAME, problem_id, solution).await?
-    },
+    }
     Command::Spacetime {
       problem: problem_id,
       command,
@@ -157,8 +178,8 @@ async fn main() -> miette::Result<()> {
           let _solution = problems::spacetime::solve(problem_id, solution)?;
           unimplemented!();
           // problems::submit(PROBLEM_NAME, problem_id, solution).await?
-        },
-        SpaceCommand::Test {args} => {
+        }
+        SpaceCommand::Test { args } => {
           problems::test_solution(PROBLEM_NAME, args.join(" "), solution).await?;
         }
       }

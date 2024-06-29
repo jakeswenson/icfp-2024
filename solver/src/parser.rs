@@ -98,33 +98,147 @@
     126 176	7E	01111110	~	&#126;	&tilde;	Equivalency sign - tilde
 */
 use crate::evaluator::Environment;
-use color_eyre::{eyre::anyhow, Result};
+use miette::{miette, LabeledSpan, Result};
+use std::cell::OnceCell;
 use std::fmt::{Debug, Formatter};
 use std::str::SplitWhitespace;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::warn;
 
 const ALIEN_ASCII : &'static str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`|~ \n";
 const MIN_CHAR: char = '!'; // ASCII 33
 const _MAX_CHAR: char = '~'; // ASCII 126
-const NUM_BASE: usize = 94;
+const NUM_BASE: NatType = 94;
+
+pub type NatType = usize;
 
 pub type ExprRef = Box<ICFPExpr>;
+
+static LAMBDA_ID: AtomicUsize = AtomicUsize::new(0);
+
+pub enum DeferredDecode<T> {
+  Deferred {
+    coded: String,
+    lazy: OnceCell<Result<T>>,
+  },
+  Lit(T),
+}
+
+impl<T: Clone> DeferredDecode<T> {
+  pub fn deferred(body: &str) -> Self {
+    Self::Deferred {
+      coded: body.to_string(),
+      lazy: OnceCell::new(),
+    }
+  }
+}
+
+impl<T: Clone> Clone for DeferredDecode<T> {
+  fn clone(&self) -> Self {
+    match self {
+      DeferredDecode::Deferred { coded, .. } => DeferredDecode::deferred(coded),
+      DeferredDecode::Lit(i) => DeferredDecode::Lit(i.clone()),
+    }
+  }
+}
+
+impl<T: PartialEq> PartialEq for DeferredDecode<T> {
+  fn eq(
+    &self,
+    other: &Self,
+  ) -> bool {
+    match (self, other) {
+      (DeferredDecode::Deferred { coded, .. }, DeferredDecode::Deferred { coded: right, .. }) => {
+        coded == right
+      }
+      (DeferredDecode::Lit(left), DeferredDecode::Lit(right)) => left == right,
+      _ => false,
+    }
+  }
+}
+
+impl<T: Eq> Eq for DeferredDecode<T> {}
+
+impl DeferredDecode<IntType> {
+  pub fn decode(&self) -> Result<IntType> {
+    match self {
+      DeferredDecode::Deferred { coded, lazy } => {
+        let res = lazy.get_or_init({
+          let clone = coded.clone();
+          move || base94_decode(&clone)
+        });
+        match res {
+          Ok(i) => Ok(*i),
+          Err(e) => Err(miette!("Failed to decode: {e:?}")),
+        }
+      }
+      DeferredDecode::Lit(lit) => Ok(*lit),
+    }
+  }
+}
+
+impl DeferredDecode<String> {
+  pub fn decode(&self) -> Result<&str> {
+    match self {
+      DeferredDecode::Deferred { coded, lazy } => {
+        let res = lazy.get_or_init({
+          let clone = coded.clone();
+          move || String::decode(&clone)
+        });
+        match res {
+          Ok(s) => Ok(&s),
+          Err(e) => Err(miette!("Failed to decode: {e:?}")),
+        }
+      }
+      DeferredDecode::Lit(lit) => Ok(lit),
+    }
+  }
+}
+
+impl Debug for DeferredDecode<IntType> {
+  fn fmt(
+    &self,
+    f: &mut Formatter<'_>,
+  ) -> std::fmt::Result {
+    f.debug_tuple("Int")
+      .field(match self {
+        DeferredDecode::Deferred { coded, .. } => coded,
+        DeferredDecode::Lit(lit) => lit,
+      })
+      .finish()
+  }
+}
+
+impl Debug for DeferredDecode<String> {
+  fn fmt(
+    &self,
+    f: &mut Formatter<'_>,
+  ) -> std::fmt::Result {
+    f.debug_tuple("String")
+      .field(match self {
+        DeferredDecode::Deferred { coded, .. } => coded,
+        DeferredDecode::Lit(lit) => lit,
+      })
+      .finish()
+  }
+}
 
 /// ICFP Alien Language
 #[derive(Clone, Eq, PartialEq)]
 pub enum ICFPExpr {
   Boolean(bool),
-  Integer(IntType),
-  String(String),
+  Integer(DeferredDecode<IntType>),
+  String(DeferredDecode<String>),
   UnaryOp(UnOp, ExprRef),
   BinaryOp(BinOp, ExprRef, ExprRef),
   /// ? B> I# I$ S9%3 S./
   If(ExprRef, ExprRef, ExprRef),
   /// B$ B$ L# L$ v# B. SB%,,/ S}Q/2,$_ IK
   /// ((\v2 -> \v3 -> v2) ("Hello" . " World!")) 42
-  Lambda(Var, ExprRef),
+  Lambda(usize, Var, ExprRef),
   VarRef(Var),
   Closure {
+    id: usize,
     arg: Var,
     body: ExprRef,
     env: Environment,
@@ -147,34 +261,112 @@ impl ICFPExpr {
     ICFPExpr::Boolean(false)
   }
 
-  pub fn if_(
-    cond: ICFPExpr,
-    if_true: ICFPExpr,
-    if_false: ICFPExpr,
+  pub fn str<S: Into<String>>(str: S) -> Self {
+    ICFPExpr::String(DeferredDecode::Lit(str.into()))
+  }
+
+  pub fn if_<C, T, F>(
+    cond: C,
+    if_true: T,
+    if_false: F,
+  ) -> Self
+  where
+    C: Into<ICFPExpr>,
+    T: Into<ICFPExpr>,
+    F: Into<ICFPExpr>,
+  {
+    ICFPExpr::If(
+      Box::new(cond.into()),
+      Box::new(if_true.into()),
+      Box::new(if_false.into()),
+    )
+  }
+
+  pub fn bin_op<L: Into<ICFPExpr>, R: Into<ICFPExpr>>(
+    left: L,
+    op: BinOp,
+    right: R,
   ) -> Self {
-    ICFPExpr::If(Box::new(cond), Box::new(if_true), Box::new(if_false))
+    ICFPExpr::BinaryOp(op, Box::new(left.into()), Box::new(right.into()))
   }
 
   pub fn lambda(
+    id: usize,
     arg: Var,
     body: ICFPExpr,
   ) -> Self {
-    ICFPExpr::Lambda(arg, Box::new(body))
+    ICFPExpr::Lambda(id, arg, Box::new(body))
   }
 
   pub fn int(i: IntType) -> Self {
-    ICFPExpr::Integer(i)
+    ICFPExpr::Integer(DeferredDecode::Lit(i))
   }
 
   pub fn var(v: usize) -> Self {
     Self::VarRef(Var(v))
   }
 
-  pub fn call(
-    lambda: ICFPExpr,
-    arg: ICFPExpr,
+  pub fn call<L: Into<ICFPExpr>, A: Into<ICFPExpr>>(
+    lambda: L,
+    arg: A,
   ) -> Self {
-    Self::BinaryOp(BinOp::ApplyLambda, Box::new(lambda), Box::new(arg))
+    Self::BinaryOp(
+      BinOp::ApplyLambda,
+      Box::new(lambda.into()),
+      Box::new(arg.into()),
+    )
+  }
+}
+
+impl From<&str> for ICFPExpr {
+  fn from(value: &str) -> Self {
+    Self::str(value)
+  }
+}
+
+impl From<String> for ICFPExpr {
+  fn from(value: String) -> Self {
+    Self::str(value)
+  }
+}
+
+impl From<IntType> for ICFPExpr {
+  fn from(value: IntType) -> Self {
+    Self::Integer(DeferredDecode::Lit(value))
+  }
+}
+
+impl From<Var> for ICFPExpr {
+  fn from(value: Var) -> Self {
+    Self::VarRef(value)
+  }
+}
+
+impl From<bool> for ICFPExpr {
+  fn from(value: bool) -> Self {
+    Self::Boolean(value)
+  }
+}
+
+impl<R: Into<ICFPExpr>> core::ops::Add<R> for ICFPExpr {
+  type Output = ICFPExpr;
+
+  fn add(
+    self,
+    rhs: R,
+  ) -> Self::Output {
+    ICFPExpr::bin_op(self, BinOp::Add, rhs.into())
+  }
+}
+
+impl<R: Into<ICFPExpr>> core::ops::Sub<R> for ICFPExpr {
+  type Output = ICFPExpr;
+
+  fn sub(
+    self,
+    rhs: R,
+  ) -> Self::Output {
+    ICFPExpr::bin_op(self, BinOp::Sub, rhs.into())
   }
 }
 
@@ -185,17 +377,41 @@ impl Debug for ICFPExpr {
   ) -> std::fmt::Result {
     match self {
       ICFPExpr::Boolean(t) => write!(f, "{}", t),
-      ICFPExpr::Integer(i) => write!(f, "int({})", i),
+      ICFPExpr::Integer(i) => write!(f, "{:?}", i),
       ICFPExpr::String(s) => write!(f, "{:?}", s),
-      ICFPExpr::UnaryOp(op, operand) => write!(f, "{:?}({:?})", op, operand),
-      ICFPExpr::BinaryOp(op, left, right) => write!(f, "({:?}).{:?}.({:?})", left, op, right),
+      ICFPExpr::UnaryOp(op, operand) => match op {
+        UnOp::Negate => write!(f, " -{:?} ", operand),
+        UnOp::Not => write!(f, " !{:?} ", operand),
+        UnOp::StrToInt => write!(f, " {:?}({:?}) ", op, operand),
+        UnOp::IntToStr => write!(f, " {:?}({:?}) ", op, operand),
+      },
+      ICFPExpr::BinaryOp(op, left, right) => match op {
+        BinOp::Add => write!(f, "({:?} + {:?})", left, right),
+        BinOp::Sub => write!(f, "({:?} - {:?})", left, right),
+        BinOp::Mul => write!(f, "({:?} * {:?})", left, right),
+        BinOp::Div => write!(f, "({:?} / {:?})", left, right),
+        BinOp::Mod => write!(f, "({:?} % {:?})", left, right),
+        BinOp::LessThan => write!(f, "({:?} < {:?})", left, right),
+        BinOp::GreaterThan => write!(f, "({:?} > {:?})", left, right),
+        BinOp::Equals => write!(f, "({:?} == {:?})", left, right),
+        BinOp::Or => write!(f, "({:?} || {:?})", left, right),
+        BinOp::And => write!(f, "({:?} && {:?})", left, right),
+        BinOp::Concat => write!(f, "({:?}).concat({:?})", left, right),
+        BinOp::TakeChars => write!(f, "take({:?}, {:?})", left, right),
+        BinOp::SkipChars => write!(f, "skip({:?}, {:?})", left, right),
+        BinOp::ApplyLambda => write!(f, "{:?}({:?})", left, right),
+      },
       ICFPExpr::If(cond, if_true, if_false) => {
-        write!(f, "if {:?} then {:?} else {:?} ", cond, if_true, if_false)
+        write!(
+          f,
+          "if ({:?}) {{ {:?} }} else {{ {:?} }}",
+          cond, if_true, if_false
+        )
       }
-      ICFPExpr::Lambda(var, body) => write!(f, "{:?} => \n\t{{ {:?} }}", var, body),
+      ICFPExpr::Lambda(id, var, body) => write!(f, "function lam_{id}({:?}){{ {:?} }} ", var, body),
       ICFPExpr::VarRef(var) => write!(f, "{:?}", var),
-      ICFPExpr::Closure { arg, body, env } => {
-        write!(f, "Closure {:?} ({:?}) => {{ {:?} }}", env, arg, body)
+      ICFPExpr::Closure { id, arg, body, env } => {
+        write!(f, "Closure({id}) {:?} ({:?}) => {{ {:?} }}", env, arg, body)
       }
       ICFPExpr::Unknown { indicator, body } => f
         .debug_struct("Unknown")
@@ -222,7 +438,7 @@ impl Debug for ICFPExpr {
 /// but there seem to also be some (unknown) limits on memory usage and total runtime.
 const _FUNCTION_CALL_LIMIT: usize = 1000;
 
-pub type IntType = i128;
+pub type IntType = i64;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct Var(pub usize);
@@ -300,7 +516,7 @@ impl Encode for ICFPExpr {
         if_true.encode(),
         if_false.encode()
       ),
-      ICFPExpr::Lambda(arg, body) => format!("L{} {}", arg.encode(), body.encode()),
+      ICFPExpr::Lambda(_id, arg, body) => format!("L{} {}", arg.encode(), body.encode()),
       ICFPExpr::VarRef(var) => format!("v{}", var.encode()),
       ICFPExpr::Unknown {
         indicator: _indicator,
@@ -324,7 +540,7 @@ impl Encode for bool {
 }
 
 // How the fuck do you do negatives?
-pub fn base94_encode_number(mut num: usize) -> String {
+pub fn base94_encode_number(mut num: NatType) -> String {
   let ascii_offset = 33; // '!' is ASCII 33
   let mut encoded = String::new();
 
@@ -343,33 +559,64 @@ pub fn base94_encode_number(mut num: usize) -> String {
 
 pub fn base94_decode(encoded: &str) -> Result<IntType> {
   let ascii_offset = 33; // '!' is ASCII 33
-  let mut num: usize = 0;
+  let mut num: NatType = 0;
 
   for (i, char) in encoded.chars().rev().enumerate() {
-    let value = (char as usize).checked_sub(ascii_offset);
+    let value = (char as NatType).checked_sub(ascii_offset);
     if let Some(digit) = value {
       if digit < NUM_BASE {
-        num += digit * NUM_BASE.pow(i as u32);
+        println!("{i}");
+        let pow = NUM_BASE.pow(i as u32);
+        println!("digit: {digit}, pow: {pow}");
+        num += digit
+          .checked_mul(pow)
+          .ok_or(miette!("Encoded Number is too big: {encoded}"))?;
       } else {
-        return Err(anyhow!("Invalid character '{}' in input", char));
+        return Err(miette!(
+          labels = vec![LabeledSpan::at(i..i + 1, "invalid"),],
+          "Invalid character '{}' in input",
+          char
+        ));
       }
     } else {
-      return Err(anyhow!("Invalid character '{}' in input", char));
+      return Err(miette!(
+        labels = vec![LabeledSpan::at(i..i + 1, "invalid"),],
+        "Invalid character '{}' in input",
+        char
+      ));
     }
   }
 
   Ok(num as IntType)
 }
 
+impl Encode for DeferredDecode<String> {
+  fn encode(&self) -> String {
+    match self {
+      DeferredDecode::Deferred { coded, .. } => format!("S{coded}"),
+      DeferredDecode::Lit(s) => s.encode(),
+    }
+  }
+}
+
+impl Encode for DeferredDecode<IntType> {
+  fn encode(&self) -> String {
+    match self {
+      DeferredDecode::Deferred { coded, .. } => format!("I{coded}"),
+      DeferredDecode::Lit(s) => s.encode(),
+    }
+  }
+}
+
 impl Encode for IntType {
   fn encode(&self) -> String {
-    base94_encode_number(*self as usize)
+    base94_encode_number(*self as NatType)
   }
 }
 
 impl Encode for Var {
   fn encode(&self) -> String {
-    base94_encode_number(self.0)
+    base94_encode_number(self.0 as NatType)
   }
 }
 
@@ -418,7 +665,7 @@ pub trait Parsable: Sized {
 impl Parsable for ICFPExpr {
   fn parse_impl(expressions: &mut SplitWhitespace) -> Result<Self> {
     let Some(exp) = expressions.next() else {
-      return Err(anyhow!("Not enough expressions in input"));
+      return Err(miette!("Not enough expressions in input"));
     };
 
     let indicator = exp[0..1].chars().next().unwrap();
@@ -427,9 +674,9 @@ impl Parsable for ICFPExpr {
     let expr = match indicator {
       'S' => {
         let result = String::decode(body)?;
-        ICFPExpr::String(result)
+        ICFPExpr::str(result)
       }
-      'I' => ICFPExpr::Integer(IntType::decode(body)?),
+      'I' => ICFPExpr::Integer(DeferredDecode::deferred(body)),
       'v' => ICFPExpr::VarRef(Var::decode(body)?),
       'T' => ICFPExpr::Boolean(true),
       'F' => ICFPExpr::Boolean(false),
@@ -449,7 +696,11 @@ impl Parsable for ICFPExpr {
       ),
       'L' => {
         let arg_name = Var::decode(body)?;
-        ICFPExpr::Lambda(arg_name, Box::new(ICFPExpr::parse_impl(expressions)?))
+        ICFPExpr::Lambda(
+          LAMBDA_ID.fetch_add(1, Ordering::SeqCst),
+          arg_name,
+          Box::new(ICFPExpr::parse_impl(expressions)?),
+        )
       }
       indicator => {
         warn!(?indicator, expr = exp, "Unknown expression");
@@ -465,11 +716,11 @@ impl Parsable for ICFPExpr {
 }
 
 pub trait Decode: Sized {
-  fn decode(input: &str) -> color_eyre::Result<Self>;
+  fn decode(input: &str) -> Result<Self>;
 }
 
 impl Decode for String {
-  fn decode(input: &str) -> color_eyre::Result<Self> {
+  fn decode(input: &str) -> Result<Self> {
     let result = input
       .chars()
       .map(|c| {
@@ -483,35 +734,35 @@ impl Decode for String {
 }
 
 impl Decode for IntType {
-  fn decode(input: &str) -> color_eyre::Result<Self> {
+  fn decode(input: &str) -> Result<Self> {
     Ok(base94_decode(input)?)
   }
 }
 
 impl Decode for Var {
-  fn decode(input: &str) -> color_eyre::Result<Self> {
+  fn decode(input: &str) -> Result<Self> {
     Ok(Var(base94_decode(input)? as usize))
   }
 }
 
 impl Decode for bool {
-  fn decode(input: &str) -> color_eyre::Result<Self> {
+  fn decode(input: &str) -> Result<Self> {
     match input {
       "T" => Ok(true),
       "F" => Ok(false),
-      c => Err(anyhow!("Unknown bool: {c}")),
+      c => Err(miette!("Unknown bool: {c}")),
     }
   }
 }
 
 impl Decode for UnOp {
-  fn decode(input: &str) -> color_eyre::Result<Self> {
+  fn decode(input: &str) -> Result<Self> {
     let op = match input {
       "-" => UnOp::Negate,
       "!" => UnOp::Not,
       "#" => UnOp::StrToInt,
       "$" => UnOp::IntToStr,
-      _ => return Err(anyhow!("Unknown unary operator: {input}")),
+      _ => return Err(miette!("Unknown unary operator: {input}")),
     };
 
     Ok(op)
@@ -519,7 +770,7 @@ impl Decode for UnOp {
 }
 
 impl Decode for BinOp {
-  fn decode(input: &str) -> color_eyre::Result<Self> {
+  fn decode(input: &str) -> Result<BinOp> {
     let op = match input {
       "+" => BinOp::Add,
       "-" => BinOp::Sub,
@@ -535,7 +786,7 @@ impl Decode for BinOp {
       "T" => BinOp::TakeChars,
       "D" => BinOp::SkipChars,
       "$" => BinOp::ApplyLambda,
-      _ => return Err(anyhow!("Unknown binary operator: {input}")),
+      _ => return Err(miette!("Unknown binary operator: {input}")),
     };
 
     Ok(op)
@@ -545,7 +796,6 @@ impl Decode for BinOp {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use color_eyre::Result;
 
   #[test]
   fn encode_string() {
@@ -720,14 +970,14 @@ mod tests {
 
   #[test]
   fn encode_simple_lambda() {
-    let expr = ICFPExpr::lambda(Var(1), ICFPExpr::int(3));
+    let expr = ICFPExpr::lambda(0, Var(1), ICFPExpr::int(3));
     assert_eq!(expr.encode(), "L\" I$");
   }
 
   #[test]
   fn decode_simple_lambda() -> Result<()> {
     let input = "L% I$";
-    let expected = ICFPExpr::lambda(Var(4), ICFPExpr::int(3));
+    let expected = ICFPExpr::lambda(0, Var(4), ICFPExpr::int(3));
     let result = ICFPExpr::parse(input)?;
     assert_eq!(result, expected);
 

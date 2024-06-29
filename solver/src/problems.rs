@@ -33,16 +33,18 @@ pub(crate) async fn download(
 
   let request = format!("get {name}{id}");
 
-  let prog = ICFPExpr::String(request);
+  let prog = ICFPExpr::str(request);
 
   let response = send_program(prog.encode()).await?;
 
-  std::fs::write(problem_raw_path, &response).map_err(|e| miette!("Failed to write raw file: {}", e))?;
-
-  let parse_result = ICFPExpr::parse(&response).map_err(|e| miette!("Error Parsing: {}", e))?;
+  std::fs::write(problem_raw_path, &response)
+    .map_err(|e| miette!("Failed to write raw file: {}", e))?;
+  let parse_result =
+    ICFPExpr::parse(&response).map_err(|e| miette!(help = response, "Error Parsing: {}", e))?;
 
   if let ICFPExpr::String(page_text) = parse_result {
-    std::fs::write(problem_path, page_text).map_err(|e| miette!("Failed to write file: {}", e))?;
+    std::fs::write(problem_path, page_text.decode()?)
+      .map_err(|e| miette!("Failed to write file: {}", e))?;
     println!("Done!");
   } else {
     println!("Expr: {parse_result:?}");
@@ -59,7 +61,8 @@ pub(crate) async fn download(
       println!("did not eval to a string!");
       return Ok(());
     };
-    std::fs::write(problem_path, page_text).map_err(|e| miette!("Failed to write file: {}", e))?;
+    std::fs::write(problem_path, page_text.decode()?)
+      .map_err(|e| miette!("Failed to write file: {}", e))?;
   };
 
   Ok(())
@@ -102,7 +105,7 @@ pub(crate) async fn submit(
   let request = format!("solve {problem}{id} {solution}");
 
   info!(request, "Submitting solution");
-  let prog = ICFPExpr::String(request);
+  let prog = ICFPExpr::str(request);
 
   let response = send_program(prog.encode()).await?;
 
@@ -113,7 +116,6 @@ pub(crate) async fn submit(
   Ok(())
 }
 
-
 pub(crate) async fn test_solution(
   problem: &str,
   args: String,
@@ -122,7 +124,7 @@ pub(crate) async fn test_solution(
   let request = format!("test {problem} {args}\n{solution}");
 
   info!(request, "Submitting solution");
-  let prog = ICFPExpr::String(request);
+  let prog = ICFPExpr::str(request);
 
   let response = send_program(prog.encode()).await?;
 
