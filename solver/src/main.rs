@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Formatter};
+use std::ops::Not;
 use crate::communicator::send_program;
 use crate::evaluator::eval;
 use crate::parser::{Encode, ICFPExpr, Parsable};
@@ -161,11 +162,11 @@ async fn main() -> miette::Result<()> {
           .map_err(|e| miette!("Failed to write file: {}", e))?;
       };
     }
-    Command::Spaceship { problem } => {
+    Command::Spaceship { problem: problem_id } => {
       let dir = env!("CARGO_MANIFEST_DIR");
       let problems_dir = PathBuf::from(format!("{dir}/../problems/spaceship"));
 
-      let problem_path = problems_dir.join(format!("spaceship{problem}"));
+      let problem_path = problems_dir.join(format!("spaceship{problem_id}"));
 
       let problem = std::fs::read_to_string(dbg!(&problem_path))
         .map_err(|e| miette!("Failed to read file: {}", e))?;
@@ -208,7 +209,7 @@ async fn main() -> miette::Result<()> {
 
       all_points.dedup();
 
-      dbg!(&all_points);
+      // dbg!(&all_points);
 
       struct Spaceship {
         vx: i32,
@@ -253,7 +254,7 @@ async fn main() -> miette::Result<()> {
 
       let starting_point = Point::default();
 
-      fn compute_moves(pts: Vec<Point>) -> Vec<i32> {
+      fn compute_moves(mut pts: Vec<Point>) -> Vec<i32> {
         fn number_of_moves_left(d: i32, t: i32, v: i32) -> i32 {
           return (t - d / v).abs();
         }
@@ -286,13 +287,23 @@ async fn main() -> miette::Result<()> {
 
         let mut vx = 0;
         let mut vy = 0;
-        for target in &pts {
+
+        while pts.is_empty().not() {
+          let closest = *pts.iter()
+            .min_by(|p1, p2| {
+              extended_taxicab_distance(curr, **p1)
+                .cmp(&extended_taxicab_distance(curr, **p2))
+            }).expect("How could we not have a point");
+
+          let pos = pts.iter().position(|x| *x == closest).unwrap();
+          pts.remove(pos);
+
 
           // if we are already at the target point but our velocity is not 0, then
           // we need to move
           loop {
-            let nx = velocity_compute(curr.x, target.x, vx);
-            let ny = velocity_compute(curr.y, target.y, vy);
+            let nx = velocity_compute(curr.x, closest.x, vx);
+            let ny = velocity_compute(curr.y, closest.y, vy);
             let move_number = compute_move(nx, ny);
 
             vx = vx + nx;
@@ -303,51 +314,50 @@ async fn main() -> miette::Result<()> {
 
             let x = curr.x;
             let y = curr.y;
-            println!("move: {move_number}, dx: {x}, dy: {y}, vx: {vx}, vy: {vy}");
+            // println!("move: {move_number}, dx: {x}, dy: {y}, vx: {vx}, vy: {vy}");
 
-            if curr.x == target.x && curr.y == target.y {
+            if curr.x == closest.x && curr.y == closest.y {
               break;
             }
           }
 
           let x = curr.x;
           let y = curr.y;
-          println!("reached: {x}, {y}")
+          // println!("reached: {x}, {y}")
         }
         return moves;
       }
 
       let all_moves = compute_moves(all_points.clone());
       println!();
-      all_moves.iter().for_each(|m| print!("{m}"));
+      println!();
+
+      let solution = all_moves.iter()
+        .map(|m| {
+          format!("{m}")
+        }).collect::<String>();
+
+      print!("{}", solution);
+
+      println!();
       println!();
       let len = all_moves.len();
       println!("Total moves: {len}");
 
-      let best_option = all_points
-        .iter()
-        .map(|p| normalize_to_lcm_point(*p))
-        .min_by(|p1, p2| {
-          extended_taxicab_distance(starting_point, *p1)
-            .cmp(&extended_taxicab_distance(starting_point, *p2))
-        })
-        .unwrap();
+      if (len > 10_000_000) {
+        println!("Can't submit with too many moves");
+        return Ok(());
+      }
 
-      dbg!(best_option);
-      all_points.retain(|p| *p != best_option);
+      let request = format!("solve spaceship{problem_id} {solution}");
 
-      let starting_point = Point::at(1, -1);
+      let prog = ICFPExpr::String(request);
 
-      let best_option = all_points
-        .iter()
-        .map(|p| normalize_to_lcm_point(*p))
-        .min_by(|p1, p2| {
-          extended_taxicab_distance(starting_point, *p1)
-            .cmp(&extended_taxicab_distance(starting_point, *p2))
-        })
-        .unwrap();
+      let response = send_program(prog.encode()).await?;
 
-      dbg!(best_option);
+      let result = ICFPExpr::parse(&response).map_err(|e| miette!("Error Parsing: {}", e))?;
+
+      println!("Response: {result:?}");
     }
   }
 
