@@ -3,7 +3,8 @@ Welcome to the efficiency course!
 In this course, your ICFP knowledge will be put to the test.
 To communicate with the rest of the solar system, the Cult uses their Macroware Insight evaluator.
 However, the School of the Bound Variable also possesses a quantum computer, on which more complex expressions can be evaluated.
-As the energy consumption of this quantum computer is getting out of hand, students must learn to find the evaluation result of such complex expressions with other means.
+As the energy consumption of this quantum computer is getting out of hand,
+students must learn to find the evaluation result of such complex expressions with other means.
 
 # Tip of the day
 
