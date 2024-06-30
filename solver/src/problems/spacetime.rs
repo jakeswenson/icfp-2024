@@ -390,7 +390,7 @@ fn evaluate(
 
   states.push(grid.clone()); // t1
 
-  for time in 1..=iterations {
+  'ticker: for time in 1..=iterations {
     let mut new_time: Option<usize> = None;
 
     let grid = states[time].clone();
@@ -457,8 +457,11 @@ fn evaluate(
               if matches!(previous.value, CellValues::EndState) {
                 info!(value = ?v, "END STATE SET!");
                 print_grid(&map);
+
+                println!("Value: {v:?}");
+
                 states.push(map.clone());
-                break;
+                break 'ticker;
               } else if !matches!(previous.value, CellValues::Empty) {
               }
             }
@@ -577,7 +580,7 @@ fn parse_grid(grid: String) -> HashMap<Point, Cell> {
   let lines: Vec<Vec<_>> = grid
     .lines()
     .map(|l| l.trim())
-    .filter(|l| !l.is_empty())
+    .filter(|l| !l.is_empty() && !l.starts_with(";"))
     .map(|l| l.split_whitespace().collect::<Vec<_>>())
     .collect();
 
@@ -610,7 +613,9 @@ fn parse_grid(grid: String) -> HashMap<Point, Cell> {
             "A" => CellValues::Param(Parameter::A),
             "B" => CellValues::Param(Parameter::B),
             "S" => CellValues::EndState,
-            a if a.chars().all(|c| c.is_ascii_digit()) => CellValues::Val(a.parse().unwrap()),
+            a if a.chars().all(|c| c == '-' || c.is_ascii_digit()) => {
+              CellValues::Val(a.parse().unwrap())
+            }
             "." => continue,
             c => panic!("I don't know this char: {c}"),
           },

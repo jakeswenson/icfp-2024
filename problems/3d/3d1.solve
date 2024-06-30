@@ -3,3 +3,18 @@
 . . . . . .
 1 @ 2 @ 3 .
 . 1 . 1 . S
+if (A == 0) then end_state := (SHIFT eq_0) + accum ;;;;;;; 3 cycles
+
+
+end_state = eq_0 + accum
+
+eq_0 : arg
+
+endstate must trigger before eq_0 must
+
+A = A - 1
+
+accum = accum + B
+
+
+warp (arg=0, accum = accum)
