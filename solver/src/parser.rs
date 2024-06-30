@@ -102,7 +102,7 @@ use malachite::num::arithmetic::traits::{Mod, Pow};
 use malachite::num::basic::traits::Zero;
 use miette::{miette, LabeledSpan, Result};
 use std::cell::OnceCell;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::DivAssign;
 use std::str::SplitWhitespace;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -227,10 +227,7 @@ impl Debug for DeferredDecode<IntType> {
     f: &mut Formatter<'_>,
   ) -> std::fmt::Result {
     f.debug_tuple("Int")
-      .field(match self {
-        DeferredDecode::Deferred { coded, .. } => coded,
-        DeferredDecode::Lit(lit) => lit,
-      })
+      .field(&self.decode())
       .finish()
   }
 }
@@ -241,16 +238,13 @@ impl Debug for DeferredDecode<String> {
     f: &mut Formatter<'_>,
   ) -> std::fmt::Result {
     f.debug_tuple("String")
-      .field(match self {
-        DeferredDecode::Deferred { coded, .. } => coded,
-        DeferredDecode::Lit(lit) => lit,
-      })
+      .field(&self.decode())
       .finish()
   }
 }
 
 /// ICFP Alien Language
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum ICFPExpr {
   Boolean(bool),
   Integer(DeferredDecode<IntType>),
@@ -398,7 +392,7 @@ impl<R: Into<ICFPExpr>> core::ops::Sub<R> for ICFPExpr {
   }
 }
 
-impl Debug for ICFPExpr {
+impl Display for ICFPExpr {
   fn fmt(
     &self,
     f: &mut Formatter<'_>,
@@ -408,38 +402,38 @@ impl Debug for ICFPExpr {
       ICFPExpr::Integer(i) => write!(f, "{:?}", i),
       ICFPExpr::String(s) => write!(f, "{:?}", s),
       ICFPExpr::UnaryOp(op, operand) => match op {
-        UnOp::Negate => write!(f, " -{:?} ", operand),
-        UnOp::Not => write!(f, " !{:?} ", operand),
-        UnOp::StrToInt => write!(f, " {:?}({:?}) ", op, operand),
-        UnOp::IntToStr => write!(f, " {:?}({:?}) ", op, operand),
+        UnOp::Negate => write!(f, " -{} ", operand),
+        UnOp::Not => write!(f, " !{} ", operand),
+        UnOp::StrToInt => write!(f, " {:?}({}) ", op, operand),
+        UnOp::IntToStr => write!(f, " {:?}({}) ", op, operand),
       },
       ICFPExpr::BinaryOp(op, left, right) => match op {
-        BinOp::Add => write!(f, "({:?} + {:?})", left, right),
-        BinOp::Sub => write!(f, "({:?} - {:?})", left, right),
-        BinOp::Mul => write!(f, "({:?} * {:?})", left, right),
-        BinOp::Div => write!(f, "({:?} / {:?})", left, right),
-        BinOp::Mod => write!(f, "({:?} % {:?})", left, right),
-        BinOp::LessThan => write!(f, "({:?} < {:?})", left, right),
-        BinOp::GreaterThan => write!(f, "({:?} > {:?})", left, right),
-        BinOp::Equals => write!(f, "({:?} == {:?})", left, right),
-        BinOp::Or => write!(f, "({:?} || {:?})", left, right),
-        BinOp::And => write!(f, "({:?} && {:?})", left, right),
-        BinOp::Concat => write!(f, "({:?}).concat({:?})", left, right),
-        BinOp::TakeChars => write!(f, "take({:?}, {:?})", left, right),
-        BinOp::SkipChars => write!(f, "skip({:?}, {:?})", left, right),
-        BinOp::ApplyLambda => write!(f, "{:?}({:?})", left, right),
+        BinOp::Add => write!(f, "({} + {})", left, right),
+        BinOp::Sub => write!(f, "({} - {})", left, right),
+        BinOp::Mul => write!(f, "({} * {})", left, right),
+        BinOp::Div => write!(f, "({} / {})", left, right),
+        BinOp::Mod => write!(f, "({} % {})", left, right),
+        BinOp::LessThan => write!(f, "({} < {})", left, right),
+        BinOp::GreaterThan => write!(f, "({} > {})", left, right),
+        BinOp::Equals => write!(f, "({} == {})", left, right),
+        BinOp::Or => write!(f, "({} || {})", left, right),
+        BinOp::And => write!(f, "({} && {})", left, right),
+        BinOp::Concat => write!(f, "({}).concat({})", left, right),
+        BinOp::TakeChars => write!(f, "take({}, {})", left, right),
+        BinOp::SkipChars => write!(f, "skip({}, {})", left, right),
+        BinOp::ApplyLambda => write!(f, "{}({})", left, right),
       },
       ICFPExpr::If(cond, if_true, if_false) => {
         write!(
           f,
-          "if ({:?}) {{ {:?} }} else {{ {:?} }}",
+          "if ({}) {{ {} }} else {{ {} }}",
           cond, if_true, if_false
         )
       }
-      ICFPExpr::Lambda(id, var, body) => write!(f, "function lam_{id}({:?}){{ {:?} }} ", var, body),
-      ICFPExpr::VarRef(var) => write!(f, "{:?}", var),
+      ICFPExpr::Lambda(id, var, body) => write!(f, "(function lam_{id}({}){{ {} }})", var, body),
+      ICFPExpr::VarRef(var) => write!(f, "{}", var),
       ICFPExpr::Closure { id, arg, body, env } => {
-        write!(f, "Closure({id}) {:?} ({:?}) => {{ {:?} }}", env, arg, body)
+        write!(f, "Closure({id}) {:?} ({}) => {{ {} }}", env, arg, body)
       }
       ICFPExpr::Thunk(thunk) => f.debug_tuple("thunk").field(thunk).finish(),
       ICFPExpr::Unknown { indicator, body } => f
@@ -472,12 +466,21 @@ pub type IntType = malachite::Integer;
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct Var(pub usize);
 
+impl Display for Var {
+  fn fmt(
+    &self,
+    f: &mut Formatter<'_>,
+  ) -> std::fmt::Result {
+    write!(f, "var_{}", self.0)
+  }
+}
+
 impl Debug for Var {
   fn fmt(
     &self,
     f: &mut Formatter<'_>,
   ) -> std::fmt::Result {
-    write!(f, "v_{}", self.0)
+    write!(f, "{}", self)
   }
 }
 
@@ -554,7 +557,7 @@ impl Encode for ICFPExpr {
       ICFPExpr::Closure { .. } => {
         unreachable!("You can't encode a closure")
       }
-      ICFPExpr::Thunk(thunk) => {
+      ICFPExpr::Thunk(_thunk) => {
         unreachable!("No way thanks can be encoded")
       }
     }
