@@ -1,6 +1,7 @@
 use crate::problems::{Direction, Point, ProblemError};
 use color_eyre::owo_colors::OwoColorize;
 use std::collections::{HashMap, HashSet};
+use std::env::args;
 use std::fmt::{write, Display, Formatter};
 use termimad::minimad::parser::parse;
 
@@ -80,6 +81,7 @@ impl Cell {
 
 // End
 
+#[derive(Clone)]
 struct StateChanges {
   time: Option<usize>,
   results: HashMap<Point, CellValues>,
@@ -344,9 +346,7 @@ fn evaluate(
 
   states.push(grid.clone()); // t1
 
-  let mut time = 1;
-
-  for t in 1..1000000 {
+  for time in 1..=1_000_000 {
     let mut new_time: Option<usize> = None;
 
     let grid = states[time].clone();
@@ -364,7 +364,9 @@ fn evaluate(
       .collect();
 
     let mut map = grid.clone();
-    let mut used = HashSet::new();
+    let mut consumed = HashSet::new();
+
+    let mut warps: Vec<StateChanges> = Vec::new();
 
     for (p, op) in &operators {
       let arg_len = op.args().len();
@@ -379,26 +381,54 @@ fn evaluate(
 
       if args.len() == arg_len {
         for (_, cell) in &args {
-          used.insert(cell.point());
+          consumed.insert(cell.point());
         }
 
         if let Some(changes) = op.apply(*p, args) {
-          for (p, v) in changes.results {
+          for (p, v) in &changes.results {
             let new_cell = Cell {
               x: p.x,
               y: p.y,
-              value: v,
+              value: *v,
             };
 
-            let option = map.insert(p, new_cell);
+            consumed.remove(&p);
+
+            let option = map.insert(*p, new_cell);
             // TODO: Enforce conflict writes
-            if let Some(time_delta) = changes.time {}
+            if let Some(time_delta) = changes.time {
+              let proposal = time - time_delta;
+              new_time = match new_time {
+                None => Some(proposal),
+                Some(proposed_time) if proposed_time == proposal => Some(proposal),
+                _ => panic!("Multiple time warps"),
+              };
+
+              warps.push(changes.clone());
+            }
           }
         }
       }
     }
 
+    if let Some(new_time) = new_time {
+      map = states[new_time].clone();
+      for changes in warps {
+        for (p, cell) in changes.results {
+          map.insert(
+            p,
+            Cell {
+              x: p.x,
+              y: p.y,
+              value: cell,
+            },
+          );
+        }
+      }
+    };
+
     print_grid(&map);
+    states.push(map);
   }
 }
 // End
@@ -500,6 +530,8 @@ pub fn solve(
 ) -> miette::Result<String, ProblemError> {
   let map = parse_grid(input);
   print_grid(&map);
+
+  evaluate(map, HashMap::new());
 
   Err(ProblemError::BadSolution { reason: "TO DO" })
 }
