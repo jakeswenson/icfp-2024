@@ -2,6 +2,8 @@ use crate::communicator::send_program;
 use crate::evaluator::eval;
 use crate::parser::{Encode, ICFPExpr, Parsable};
 use miette::{miette, Diagnostic};
+use std::fmt::{Debug, Display, Formatter};
+use std::ops::Add;
 use std::path::PathBuf;
 use thiserror::Error;
 use tracing::{debug, info};
@@ -13,6 +15,79 @@ pub mod spaceship;
 pub mod lambdaman;
 
 pub mod spacetime;
+
+#[derive(Default, Copy, Clone, PartialEq, Eq, Hash)]
+struct Point {
+  x: i32,
+  y: i32,
+}
+
+impl Point {
+  fn at(
+    x: i32,
+    y: i32,
+  ) -> Self {
+    Self { x, y }
+  }
+}
+
+impl Debug for Point {
+  fn fmt(
+    &self,
+    f: &mut Formatter<'_>,
+  ) -> std::fmt::Result {
+    write!(f, "({}, {})", self.x, self.y)
+  }
+}
+
+impl Add<(i32, i32)> for Point {
+  type Output = Point;
+
+  fn add(
+    self,
+    rhs: (i32, i32),
+  ) -> Self::Output {
+    Point::at(self.x + rhs.0, self.y + rhs.1)
+  }
+}
+
+impl Add<Direction> for Point {
+  type Output = Point;
+
+  fn add(
+    self,
+    rhs: Direction,
+  ) -> Self::Output {
+    self + rhs
+  }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+enum Direction {
+  Up,
+  Down,
+  Left,
+  Right,
+}
+
+impl Direction {
+  fn adjustment(&self) -> (i32, i32) {
+    match self {
+      Direction::Up => (-1, 0),
+      Direction::Down => (1, 0),
+      Direction::Left => (0, -1),
+      Direction::Right => (0, 1),
+    }
+  }
+}
+
+// Define directions with corresponding names
+const DIRS: [((isize, isize), Direction); 4] = [
+  ((-1, 0), Direction::Up),   // up
+  ((1, 0), Direction::Down),  // down
+  ((0, -1), Direction::Left), // left
+  ((0, 1), Direction::Right), // right
+];
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum ProblemError {

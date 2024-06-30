@@ -1,15 +1,7 @@
 use crate::problems::lambdaman::Direction::Down;
-use crate::problems::ProblemError;
+use crate::problems::{Direction, ProblemError, DIRS};
 use std::collections::VecDeque;
 use std::fmt::Display;
-
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-enum Direction {
-  Up,
-  Down,
-  Left,
-  Right,
-}
 
 impl Display for Direction {
   fn fmt(
@@ -54,14 +46,6 @@ impl Direction {
 
 use crate::problems::lambdaman::GridState::{Candy, Visited};
 use Direction::*;
-
-// Define directions with corresponding names
-const DIRS: [((isize, isize), Direction); 4] = [
-  ((-1, 0), Up),   // up
-  ((1, 0), Down),  // down
-  ((0, -1), Left), // left
-  ((0, 1), Right), // right
-];
 
 #[derive(Debug)]
 struct State {

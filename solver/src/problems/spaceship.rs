@@ -1,33 +1,9 @@
 use crate::communicator::send_program;
 use crate::parser::{Encode, ICFPExpr, Parsable};
+use crate::problems::Point;
 use miette::miette;
-use std::fmt::{Debug, Formatter};
 use std::ops::Not;
 use std::path::PathBuf;
-
-#[derive(Default, Copy, Clone, PartialEq, Eq)]
-struct Point {
-  x: i32,
-  y: i32,
-}
-
-impl Point {
-  fn at(
-    x: i32,
-    y: i32,
-  ) -> Self {
-    Self { x, y }
-  }
-}
-
-impl Debug for Point {
-  fn fmt(
-    &self,
-    f: &mut Formatter<'_>,
-  ) -> std::fmt::Result {
-    write!(f, "({}, {})", self.x, self.y)
-  }
-}
 
 struct Spaceship {
   vx: i32,
