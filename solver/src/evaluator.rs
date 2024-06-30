@@ -225,7 +225,7 @@ impl CallByName for ICFPExpr {
     &self,
     name: Var,
     expr: &ICFPExpr,
-    free_vars: &HashSet<Var>
+    free_vars: &HashSet<Var>,
   ) -> Cow<Self> {
     use Cow::*;
     match self {
@@ -593,11 +593,14 @@ impl Evaluable for ICFPExpr {
 
               let right_simp = right.simplify(env);
 
-              let r = right_simp.as_ref().inspect(|v| {
-                info!(new=%v, old=%right, "simplified");
-              }).unwrap_or_else(|e| e);
+              let r = right_simp
+                .as_ref()
+                .inspect(|v| {
+                  info!(new=%v, old=%right, "simplified");
+                })
+                .unwrap_or_else(|e| e);
 
-              match body.bind_by_name(arg_name,r, &free_vars) {
+              match body.bind_by_name(arg_name, r, &free_vars) {
                 Cow::Borrowed(body) => {
                   trace!(id, %body, "lambda, no rebinding");
                   body.eval(&env)?
@@ -673,43 +676,53 @@ impl Evaluable for ICFPExpr {
 }
 
 impl ICFPExpr {
-  fn simplify(&self, env: &Environment) -> EvalResult<&ICFPExpr> {
-    use ICFPExpr::*;
+  fn simplify(
+    &self,
+    env: &Environment,
+  ) -> EvalResult<&ICFPExpr> {
     use BinOp::*;
     use Cow::*;
+    use ICFPExpr::*;
     match self {
-      expr@Boolean(_)
-      | expr@Integer(_)
-      | expr@String(_)
-      | expr@ Unknown { .. }
-      | expr@Thunk(_) => Ok(expr.clone()),
+      expr @ Boolean(_)
+      | expr @ Integer(_)
+      | expr @ String(_)
+      | expr @ Unknown { .. }
+      | expr @ Thunk(_) => Ok(expr.clone()),
       UnaryOp(op, expr) => {
         let e = expr.simplify(env).map_err(|_| self)?;
         Ok(UnaryOp(*op, Box::new(e)).eval(env).map_err(|_| self)?)
-      },
+      }
       BinaryOp(op, left, right) => {
         let left = left.simplify(env).map_err(|_| self)?;
         let right = right.simplify(env).map_err(|_| self)?;
-        Ok(BinaryOp(*op, Box::new(left), Box::new(right)).eval(env).map_err(|_| self)?)
+        Ok(
+          BinaryOp(*op, Box::new(left), Box::new(right))
+            .eval(env)
+            .map_err(|_| self)?,
+        )
       }
       If(cond, t, f) => {
         let cond = cond.simplify(env).map_err(|_| self)?;
         let t = t.simplify(env).map_err(|_| self)?;
         let f = f.simplify(env).map_err(|_| self)?;
-        Ok(If(Box::new(cond), Box::new(t), Box::new(f)).eval(env).map_err(|_| self)?)
+        Ok(
+          If(Box::new(cond), Box::new(t), Box::new(f))
+            .eval(env)
+            .map_err(|_| self)?,
+        )
       }
-      Lambda(_, _, _)
-      | VarRef(_)
-      | Closure { .. } => Err(self)
+      Lambda(_, _, _) | VarRef(_) | Closure { .. } => Err(self),
     }
   }
 
-  fn collect_free_vars(&self, set: &mut HashSet<Var>) {
+  fn collect_free_vars(
+    &self,
+    set: &mut HashSet<Var>,
+  ) {
     use ICFPExpr::*;
     match self {
-       Boolean(_)
-      | Integer(_)
-      | String(_)  => {}
+      Boolean(_) | Integer(_) | String(_) => {}
       UnaryOp(_, exp) => exp.collect_free_vars(set),
       BinaryOp(_, left, right) => {
         left.collect_free_vars(set);
@@ -720,8 +733,7 @@ impl ICFPExpr {
         t.collect_free_vars(set);
         f.collect_free_vars(set);
       }
-      Closure { arg: var, body, .. }
-      | Lambda(_, var, body) => {
+      Closure { arg: var, body, .. } | Lambda(_, var, body) => {
         let mut body_set = HashSet::new();
         body.collect_free_vars(&mut body_set);
         body_set.remove(var);
@@ -729,7 +741,7 @@ impl ICFPExpr {
       }
       VarRef(v) => {
         set.insert(*v);
-      },
+      }
       Thunk(_) => {}
       Unknown { .. } => {}
     }
@@ -738,10 +750,10 @@ impl ICFPExpr {
 
 #[cfg(test)]
 mod tests {
-  use tracing_test::traced_test;
   use crate::evaluator::{eval, Environment, EvalError, Evaluable};
   use crate::parser::ICFPExpr::VarRef;
   use crate::parser::{BinOp, ICFPExpr, Parsable, Var};
+  use tracing_test::traced_test;
 
   #[traced_test]
   #[test]

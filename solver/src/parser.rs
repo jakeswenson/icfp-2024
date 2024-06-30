@@ -226,9 +226,7 @@ impl Debug for DeferredDecode<IntType> {
     &self,
     f: &mut Formatter<'_>,
   ) -> std::fmt::Result {
-    f.debug_tuple("Int")
-      .field(&self.decode())
-      .finish()
+    f.debug_tuple("Int").field(&self.decode()).finish()
   }
 }
 
@@ -237,9 +235,7 @@ impl Debug for DeferredDecode<String> {
     &self,
     f: &mut Formatter<'_>,
   ) -> std::fmt::Result {
-    f.debug_tuple("String")
-      .field(&self.decode())
-      .finish()
+    f.debug_tuple("String").field(&self.decode()).finish()
   }
 }
 
@@ -424,11 +420,7 @@ impl Display for ICFPExpr {
         BinOp::ApplyLambda => write!(f, "{}({})", left, right),
       },
       ICFPExpr::If(cond, if_true, if_false) => {
-        write!(
-          f,
-          "if ({}) {{ {} }} else {{ {} }}",
-          cond, if_true, if_false
-        )
+        write!(f, "if ({}) {{ {} }} else {{ {} }}", cond, if_true, if_false)
       }
       ICFPExpr::Lambda(id, var, body) => write!(f, "(function lam_{id}({}){{ {} }})", var, body),
       ICFPExpr::VarRef(var) => write!(f, "{}", var),
