@@ -106,6 +106,7 @@ use std::fmt::{Debug, Formatter};
 use std::ops::DivAssign;
 use std::str::SplitWhitespace;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use tracing::{debug, warn};
 
 const ALIEN_ASCII : &'static str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`|~ \n";
@@ -268,6 +269,7 @@ pub enum ICFPExpr {
     body: ExprRef,
     env: Environment,
   },
+  Thunk(Arc<crate::evaluator::LazyExpr>),
   /// The above set of language constructs are all that researchers have discovered,
   /// and it is conjectured that the Cult will never use anything else in their
   /// communication towards Earth. However, it is unknown whether more language constructs exist.
@@ -439,6 +441,7 @@ impl Debug for ICFPExpr {
       ICFPExpr::Closure { id, arg, body, env } => {
         write!(f, "Closure({id}) {:?} ({:?}) => {{ {:?} }}", env, arg, body)
       }
+      ICFPExpr::Thunk(thunk) => f.debug_tuple("thunk").field(thunk).finish(),
       ICFPExpr::Unknown { indicator, body } => f
         .debug_struct("Unknown")
         .field("indicator", indicator)
@@ -550,6 +553,9 @@ impl Encode for ICFPExpr {
       } => unimplemented!(),
       ICFPExpr::Closure { .. } => {
         unreachable!("You can't encode a closure")
+      }
+      ICFPExpr::Thunk(thunk) => {
+        unreachable!("No way thanks can be encoded")
       }
     }
   }

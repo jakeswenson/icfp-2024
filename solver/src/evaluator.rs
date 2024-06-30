@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -5,7 +6,9 @@ use std::ops::{Add, Neg};
 use std::sync::Arc;
 
 use miette::{Diagnostic, Report};
+use serde::__private::de::Borrowed;
 use thiserror::Error;
+use tracing::{debug, trace};
 
 use super::parser::{
   base94_decode, base94_encode_number, BinOp, Decode, DeferredDecode, Encode, ICFPExpr, IntType,
@@ -148,7 +151,7 @@ impl ICFPExpr {
 }
 
 #[derive(Clone)]
-struct LazyExpr {
+pub(crate) struct LazyExpr {
   once_cell: OnceCell<EvalResult>,
   func: DeferredEval,
 }
@@ -205,6 +208,118 @@ impl LazyExpr {
 
   fn get(&self) -> EvalResult {
     self.once_cell.get_or_init(|| self.func.eval()).clone()
+  }
+}
+
+trait CallByName: Clone {
+  fn bind_by_name(
+    &self,
+    name: Var,
+    expr: &Arc<LazyExpr>,
+  ) -> Cow<Self>;
+}
+
+impl CallByName for ICFPExpr {
+  fn bind_by_name(
+    &self,
+    name: Var,
+    expr: &Arc<LazyExpr>,
+  ) -> Cow<Self> {
+    use Cow::*;
+    match self {
+      noop @ ICFPExpr::Boolean(_) | noop @ ICFPExpr::Integer(_) | noop @ ICFPExpr::String(_) => {
+        Borrowed(noop)
+      }
+      ICFPExpr::UnaryOp(op, body) => match body.bind_by_name(name, expr) {
+        Borrowed(_) => Borrowed(self),
+        Owned(body) => Owned(ICFPExpr::UnaryOp(*op, Box::new(body))),
+      },
+      ICFPExpr::BinaryOp(op, left, right) => {
+        match (
+          left.bind_by_name(name, expr),
+          right.bind_by_name(name, expr),
+        ) {
+          (Owned(left), Owned(right)) => {
+            Owned(ICFPExpr::BinaryOp(*op, Box::new(left), Box::new(right)))
+          }
+          (Borrowed(left), Owned(right)) => Owned(ICFPExpr::BinaryOp(
+            *op,
+            Box::new(left.clone()),
+            Box::new(right),
+          )),
+          (Owned(left), Borrowed(right)) => Owned(ICFPExpr::BinaryOp(
+            *op,
+            Box::new(left),
+            Box::new(right.clone()),
+          )),
+          (Borrowed(_), Borrowed(_)) => Borrowed(self),
+        }
+      }
+      ICFPExpr::If(cond, left, right) => {
+        match (
+          cond.bind_by_name(name, expr),
+          left.bind_by_name(name, expr),
+          right.bind_by_name(name, expr),
+        ) {
+          (Owned(cond), Owned(left), Owned(right)) => Owned(ICFPExpr::If(
+            Box::new(cond),
+            Box::new(left),
+            Box::new(right),
+          )),
+          (Owned(cond), Borrowed(left), Borrowed(right)) => Owned(ICFPExpr::If(
+            Box::new(cond),
+            Box::new(left.clone()),
+            Box::new(right.clone()),
+          )),
+          (Owned(cond), Borrowed(left), Owned(right)) => Owned(ICFPExpr::If(
+            Box::new(cond),
+            Box::new(left.clone()),
+            Box::new(right),
+          )),
+          (Owned(cond), Owned(left), Borrowed(right)) => Owned(ICFPExpr::If(
+            Box::new(cond),
+            Box::new(left),
+            Box::new(right.clone()),
+          )),
+          (Borrowed(cond), Borrowed(left), Owned(right)) => Owned(ICFPExpr::If(
+            Box::new(cond.clone()),
+            Box::new(left.clone()),
+            Box::new(right),
+          )),
+          (Borrowed(cond), Owned(left), Borrowed(right)) => Owned(ICFPExpr::If(
+            Box::new(cond.clone()),
+            Box::new(left),
+            Box::new(right.clone()),
+          )),
+          (Borrowed(cond), Owned(left), Owned(right)) => Owned(ICFPExpr::If(
+            Box::new(cond.clone()),
+            Box::new(left),
+            Box::new(right),
+          )),
+          (Borrowed(_), Borrowed(_), Borrowed(_)) => Borrowed(self),
+        }
+      }
+      ICFPExpr::VarRef(var) => {
+        if *var == name {
+          Owned(ICFPExpr::Thunk(expr.clone()))
+        } else {
+          Borrowed(self)
+        }
+      }
+      ICFPExpr::Lambda(id, arg, body) => {
+        if *arg == name {
+          Borrowed(self)
+        } else {
+          match body.bind_by_name(name, &expr) {
+            Borrowed(_) => Borrowed(self),
+            Owned(body) => Owned(ICFPExpr::Lambda(*id, *arg, Box::new(body))),
+          }
+        }
+      }
+      ICFPExpr::Closure { id, arg, body, env } => Borrowed(self),
+      ICFPExpr::Thunk(_) => Borrowed(self),
+      ICFPExpr::Unknown { .. } => Borrowed(self),
+    }
   }
 }
 
@@ -291,7 +406,7 @@ impl Evaluable for ICFPExpr {
           ICFPExpr::int(left + right)
         }
         BinOp::Sub => {
-          println!("SubEval: {:?} in {env:?}", left);
+          trace!(?left, ?env, "eval subtract");
           let left = left
             .eval(env)?
             .expect_int()
@@ -384,8 +499,9 @@ impl Evaluable for ICFPExpr {
         BinOp::Equals => {
           let left = left.eval(env)?;
           let right = right.eval(env)?;
-          println!("{left:?} == {right:?}");
-          ICFPExpr::Boolean(left == right)
+          let result = left == right;
+          trace!(result, ?left, ?right, "equals?");
+          ICFPExpr::Boolean(result)
         }
         BinOp::Or => {
           let left = left.eval(env)?.expect_bool()?;
@@ -464,9 +580,20 @@ impl Evaluable for ICFPExpr {
           let arg_value = right.clone();
           match left.eval(env)? {
             ICFPExpr::Lambda(id, arg_name, body) => {
-              let mut environment = env.bind(arg_name, *arg_value);
-              println!("Eval Lambda {id}");
-              body.eval(&mut environment)?
+              //let environment = env.bind(arg_name, *arg_value);
+              let expr = LazyExpr::new((*arg_value).clone(), env.clone());
+              let arc = Arc::new(expr);
+              match body.bind_by_name(arg_name, &arc) {
+                Cow::Borrowed(body) => {
+                  trace!(id, ?body, "lambda, no rebinding");
+
+                  body.eval(&env)?
+                }
+                Cow::Owned(body) => {
+                  trace!(id, ?body, "lambda, rebinding");
+                  body.eval(&env)?
+                }
+              }
             }
             ICFPExpr::Closure {
               id: _id,
@@ -474,19 +601,16 @@ impl Evaluable for ICFPExpr {
               body,
               env: clo_env,
             } => {
-              println!();
-              println!();
+              debug!(id=_id, arg = ?arg_name, value = ?right,"Eval Closure");
 
-              println!("Eval Closure {_id} (set {arg_name:?}: {right:?})");
-
-              println!("Current Env: {:?}", env);
-              println!("Closure Env: {:?}", clo_env);
+              trace!(env = ?env, "Current");
+              trace!(env = ?clo_env, "Closure");
 
               let environment = env.bind(arg_name, *arg_value);
               let e = environment.merge(&clo_env, arg_name);
 
-              println!("Merged Env: {environment:?}");
-              println!("Final Env: {:?}", e);
+              trace!(env = ?environment, "Merged");
+              trace!(env = ?e, "Final");
 
               body.eval(&e)?
             }
@@ -501,19 +625,21 @@ impl Evaluable for ICFPExpr {
       },
       ICFPExpr::If(cond, if_true, if_false) => {
         if cond.eval(env)?.expect_bool()? {
-          // println!("true: {cond:?} {env:?}");
+          trace!("true: {cond:?} {env:?}");
           if_true.eval(env)?
         } else {
-          // println!("false: {cond:?}");
+          trace!("false: {cond:?}");
           if_false.eval(env)?
         }
       }
-      ICFPExpr::Lambda(id, arg, body) => ICFPExpr::Closure {
-        id: *id,
-        arg: *arg,
-        body: body.clone(),
-        env: env.clone(),
-      },
+
+      // ICFPExpr::Lambda(id, arg, body) => ICFPExpr::Closure {
+      //   id: *id,
+      //   arg: *arg,
+      //   body: body.clone(),
+      //   env: env.clone(),
+      // },
+      lambda @ ICFPExpr::Lambda(_, _, _) => lambda.clone(),
       closure @ ICFPExpr::Closure { .. } => closure.clone(),
       ICFPExpr::VarRef(var) => env
         .vars
@@ -525,6 +651,7 @@ impl Evaluable for ICFPExpr {
           ),
         })?
         .get()?,
+      ICFPExpr::Thunk(thunk) => thunk.get()?,
       ICFPExpr::Unknown { indicator, .. } => {
         unimplemented!("Unknown {indicator} not evaluable")
       }
