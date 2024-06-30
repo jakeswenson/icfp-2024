@@ -1,18 +1,20 @@
-use super::parser::{
-  base94_decode, base94_encode_number, BinOp, Decode, DeferredDecode, Encode, ICFPExpr, IntType,
-  NatType, UnOp, Var,
-};
-use miette::{Diagnostic, Report};
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Neg};
 use std::sync::Arc;
+
+use miette::{Diagnostic, Report};
 use thiserror::Error;
+
+use super::parser::{
+  base94_decode, base94_encode_number, BinOp, Decode, DeferredDecode, Encode, ICFPExpr, IntType,
+  UnOp, Var,
+};
 
 type EvalResult<Error = EvalError> = Result<ICFPExpr, Error>;
 
-pub fn eval(expr: ICFPExpr) -> EvalResult<miette::Report> {
+pub fn eval(expr: ICFPExpr) -> EvalResult<Report> {
   Ok(expr.eval(&Environment::default())?)
 }
 
@@ -131,7 +133,7 @@ impl ICFPExpr {
   pub fn expect_string(&self) -> Result<&str, EvalError> {
     match self {
       ICFPExpr::String(s) => {
-        let x = s.decode().map_err(|e| EvalError::DecodeError {
+        let x = s.decode().map_err(|_e| EvalError::DecodeError {
           message: format!("Failed to decode: {:?}", s),
           ctx: "".to_string(),
         })?;

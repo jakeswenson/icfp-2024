@@ -1,10 +1,7 @@
 use crate::problems::{Direction, Point, ProblemError};
-use color_eyre::owo_colors::OwoColorize;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
-use std::env::args;
-use std::fmt::{write, Debug, Display, Formatter, Pointer};
-use termimad::minimad::parser::parse;
+use std::fmt::{Debug, Display, Formatter};
 use tracing::{debug, error, info, trace};
 
 // Shared types
@@ -318,7 +315,7 @@ impl Operator {
     Some(changes)
   }
 
-  fn arity(&self) -> OperatorArity {
+  fn _arity(&self) -> OperatorArity {
     match self {
       Operator::ShiftLeft => OperatorArity::Unary,
       Operator::ShiftRight => OperatorArity::Unary,
@@ -532,8 +529,6 @@ fn evaluate(
 // End
 
 fn print_grid(grid: &HashMap<Point, Cell>) {
-  const HEADER_SIZE: usize = 20;
-  println!("{}", "=".repeat(HEADER_SIZE));
   let xs = grid.keys().map(|p| p.x).collect::<Vec<_>>();
   let ys = grid.keys().map(|p| p.y).collect::<Vec<_>>();
 
@@ -546,6 +541,21 @@ fn print_grid(grid: &HashMap<Point, Cell>) {
   let cols = (max_x - min_x) as usize;
   let rows = (max_y - min_y) as usize;
 
+  let col_width = 2;
+  println!("{}", "=".repeat(col_width * cols + 10));
+  println!(
+    "   | {}",
+    (0..cols)
+      .map(|c| {
+        if c < 10 || c % 2 == 0 {
+          format!("{c:^col_width$}")
+        } else {
+          format!("{:^col_width$}", "")
+        }
+      })
+      .collect::<String>()
+  );
+  println!("{}", "_".repeat(col_width * cols + 10));
   let mut map = vec![vec![CellValues::default(); cols]; rows];
 
   grid.iter().for_each(|(k, v)| {
@@ -554,8 +564,7 @@ fn print_grid(grid: &HashMap<Point, Cell>) {
 
   map.iter().enumerate().for_each(|(no, line)| {
     println!(
-      "{:^3}| {} ",
-      no,
+      "{no:^3}| {}",
       line
         .iter()
         .map(|cell| {
@@ -567,12 +576,12 @@ fn print_grid(grid: &HashMap<Point, Cell>) {
             CellValues::Empty => ".".to_string(),
           };
 
-          format!("{:<2}", symbol)
+          format!("{:^col_width$}", symbol)
         })
-        .collect::<String>()
+        .collect::<String>(),
     )
   });
-  println!("{}", "=".repeat(HEADER_SIZE));
+  println!("{}", "=".repeat(col_width * cols + 10));
 }
 
 // Visualizer
@@ -583,8 +592,6 @@ fn parse_grid(grid: String) -> HashMap<Point, Cell> {
     .filter(|l| !l.is_empty() && !l.starts_with(";"))
     .map(|l| l.split_whitespace().collect::<Vec<_>>())
     .collect();
-
-  let max_cols = lines.iter().map(|l| l.len()).max().unwrap();
 
   let mut map = HashMap::new();
 

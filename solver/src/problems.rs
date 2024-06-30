@@ -2,7 +2,7 @@ use crate::communicator::send_program;
 use crate::evaluator::eval;
 use crate::parser::{Encode, ICFPExpr, Parsable};
 use miette::{miette, Diagnostic};
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::ops::Add;
 use std::path::PathBuf;
 use thiserror::Error;
