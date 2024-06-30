@@ -1,10 +1,11 @@
 use crate::problems::{Direction, Point, ProblemError};
 use color_eyre::owo_colors::OwoColorize;
+use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::env::args;
-use std::fmt::{write, Display, Formatter};
+use std::fmt::{write, Debug, Display, Formatter, Pointer};
 use termimad::minimad::parser::parse;
-use tracing::debug;
+use tracing::{debug, error, info, trace};
 
 // Shared types
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -80,6 +81,15 @@ impl Cell {
   }
 }
 
+impl Debug for Cell {
+  fn fmt(
+    &self,
+    f: &mut Formatter<'_>,
+  ) -> std::fmt::Result {
+    f.debug_tuple("Cell").field(&self.value).finish()
+  }
+}
+
 // End
 
 #[derive(Clone, Debug)]
@@ -150,7 +160,10 @@ impl Operator {
 
         let value = CellValues::Val(match (left, up) {
           (CellValues::Val(l), CellValues::Val(u)) => l + u,
-          _ => return None,
+          _ => {
+            trace!(op = ?self, "incorrect arg, skipping");
+            return None;
+          }
         });
 
         StateChanges {
@@ -164,7 +177,11 @@ impl Operator {
 
         let value = CellValues::Val(match (left, up) {
           (CellValues::Val(l), CellValues::Val(u)) => l - u,
-          _ => return None,
+          _ => {
+            trace!(op = ?self, "incorrect arg, skipping");
+
+            return None;
+          }
         });
 
         StateChanges {
@@ -178,7 +195,11 @@ impl Operator {
 
         let value = CellValues::Val(match (left, up) {
           (CellValues::Val(l), CellValues::Val(u)) => l * u,
-          _ => return None,
+          _ => {
+            trace!(op = ?self, "incorrect arg, skipping");
+
+            return None;
+          }
         });
 
         StateChanges {
@@ -192,7 +213,11 @@ impl Operator {
 
         let value = CellValues::Val(match (left, up) {
           (CellValues::Val(l), CellValues::Val(u)) => l / u,
-          _ => return None,
+          _ => {
+            trace!(op = ?self, "incorrect arg, skipping");
+
+            return None;
+          }
         });
 
         StateChanges {
@@ -206,7 +231,10 @@ impl Operator {
 
         let value = CellValues::Val(match (left, up) {
           (CellValues::Val(l), CellValues::Val(u)) => l % u,
-          _ => return None,
+          _ => {
+            trace!(op = ?self, "incorrect arg, skipping");
+            return None;
+          }
         });
 
         StateChanges {
@@ -223,9 +251,13 @@ impl Operator {
           | (l @ CellValues::Op(_), u @ CellValues::Op(_))
             if l == u =>
           {
+            trace!(left = ?l, up = ?u, "equal!");
             l
           }
-          _ => return None,
+          _ => {
+            trace!(op = ?self, "incorrect arg, skipping");
+            return None;
+          }
         };
 
         StateChanges {
@@ -246,7 +278,10 @@ impl Operator {
           {
             (l, u)
           }
-          _ => return None,
+          _ => {
+            trace!(op = ?self, "incorrect arg, skipping");
+            return None;
+          }
         };
 
         StateChanges {
@@ -256,20 +291,25 @@ impl Operator {
       }
       Operator::Warp => {
         let CellValues::Val(dx) = args.get(&Left).unwrap().value else {
+          trace!(op = ?self, arg = ?Left, "incorrect arg, skipping");
           return None;
         };
         let CellValues::Val(dy) = args.get(&Right).unwrap().value else {
+          trace!(op = ?self, arg = ?Right, "incorrect arg, skipping");
           return None;
         };
         let CellValues::Val(value) = args.get(&Up).unwrap().value else {
+          trace!(op = ?self, arg = ?Up, "incorrect arg, skipping");
           return None;
         };
-        let CellValues::Val(new_time) = args.get(&Down).unwrap().value else {
+        let CellValues::Val(dt) = args.get(&Down).unwrap().value else {
+          trace!(op = ?self, arg = ?Down, "incorrect arg, skipping");
           return None;
         };
 
+        trace!(dx, dy, value, dt, ?pos, "Warping!");
         StateChanges {
-          time: Some(new_time as usize),
+          time: Some(dt as usize),
           results: HashMap::from([(pos + (-dx, -dy), CellValues::Val(value))]),
         }
       }
@@ -308,7 +348,7 @@ impl Display for Operator {
         Operator::ShiftLeft => '<',
         Operator::ShiftRight => '>',
         Operator::ShiftUp => '^',
-        Operator::ShiftDown => 'V',
+        Operator::ShiftDown => 'v',
         Operator::Add => '+',
         Operator::Sub => '-',
         Operator::Mul => '*',
@@ -379,27 +419,25 @@ fn evaluate(
     let mut warps: Vec<StateChanges> = Vec::new();
 
     for (p, op) in &operators {
-      debug!(point = ?p, ?op, "Processing operator");
+      debug!(point = ?p, ?op, "processing operator");
       let arg_len = op.args().len();
       let args: HashMap<Direction, _> = op
         .args()
         .iter()
-        .filter_map(|dir| match grid.get(p) {
+        .filter_map(|dir| match grid.get(&(*p + *dir)) {
           Some(cell) if cell.value != CellValues::Empty => Some((*dir, *cell)),
           _ => None,
         })
         .collect();
 
-      debug!(args = ?args.keys(), "collected args");
+      trace!(args = ?args, ?op, "collected args");
       if args.len() == arg_len {
         for (_, cell) in &args {
           consumed.insert(cell.point());
         }
 
-        debug!("Tracked consumption");
-
         if let Some(changes) = op.apply(*p, args) {
-          debug!(?changes, "Operator Changes");
+          debug!(?changes, "operator has changes");
           for (p, v) in &changes.results {
             let new_cell = Cell {
               x: p.x,
@@ -407,12 +445,29 @@ fn evaluate(
               value: *v,
             };
 
-            written.insert(*p);
+            if !written.contains(p) {
+              written.insert(*p);
+            } else {
+              error!(pos = ?p, "write conflict: double write!!");
+              return;
+            }
 
-            let option = map.insert(*p, new_cell);
+            debug!(new = ?*v, pos=?p, "update");
+            if let Some(previous) = (&mut map).insert(*p, new_cell) {
+              if matches!(previous.value, CellValues::EndState) {
+                info!(value = ?v, "END STATE SET!");
+                print_grid(&map);
+                states.push(map.clone());
+                break;
+              } else if !matches!(previous.value, CellValues::Empty) {
+              }
+            }
+
             // TODO: Enforce conflict writes
+
             if let Some(time_delta) = changes.time {
               let proposal = time - time_delta;
+              trace!(to = proposal, "requesting warp");
               new_time = match new_time {
                 None => Some(proposal),
                 Some(proposed_time) if proposed_time == proposal => Some(proposal),
@@ -425,7 +480,7 @@ fn evaluate(
         }
       }
 
-      debug!("processed operator")
+      trace!("processed operator")
     }
 
     if let Some(new_time) = new_time {
@@ -457,49 +512,64 @@ fn evaluate(
       }
     };
 
-    states.push(map);
+    if map
+      .values()
+      .find(|v| matches!(v.value, CellValues::EndState))
+      .is_none()
+    {
+      println!("END STATE GONE!");
+      print_grid(&map);
+      states.push(map);
+      break;
+    } else {
+      states.push(map);
+    }
   }
 }
 // End
 
 fn print_grid(grid: &HashMap<Point, Cell>) {
-  println!("============");
+  const HEADER_SIZE: usize = 20;
+  println!("{}", "=".repeat(HEADER_SIZE));
   let xs = grid.keys().map(|p| p.x).collect::<Vec<_>>();
   let ys = grid.keys().map(|p| p.y).collect::<Vec<_>>();
 
-  let min_x = *xs.iter().min().unwrap();
+  let min_x = min(*xs.iter().min().unwrap(), 0);
   let max_x = *xs.iter().max().unwrap() + 1;
 
-  let min_y = *ys.iter().min().unwrap();
+  let min_y = min(*ys.iter().min().unwrap(), 0);
   let max_y = *ys.iter().max().unwrap() + 1;
 
-  let rows = (max_x - min_x) as usize;
-  let cols = (max_y - min_y) as usize;
+  let cols = (max_x - min_x) as usize;
+  let rows = (max_y - min_y) as usize;
 
   let mut map = vec![vec![CellValues::default(); cols]; rows];
 
   grid.iter().for_each(|(k, v)| {
-    map[(k.x - min_x) as usize][(k.y - min_y) as usize] = v.value;
+    map[(k.y - min_y) as usize][(k.x - min_x) as usize] = v.value;
   });
 
-  map.iter().for_each(|line| {
+  map.iter().enumerate().for_each(|(no, line)| {
     println!(
-      " {} ",
+      "{:^3}| {} ",
+      no,
       line
         .iter()
         .map(|cell| {
-          match cell {
+          let symbol = match cell {
             CellValues::Op(o) => o.to_string(),
             CellValues::Param(p) => p.to_string(),
             CellValues::Val(v) => v.to_string(),
             CellValues::EndState => "S".to_string(),
             CellValues::Empty => ".".to_string(),
-          }
+          };
+
+          format!("{:<2}", symbol)
         })
         .collect::<String>()
     )
   });
-  println!("============");
+  println!("{}", "=".repeat(HEADER_SIZE));
 }
 
 // Visualizer
@@ -517,7 +587,7 @@ fn parse_grid(grid: String) -> HashMap<Point, Cell> {
 
   for (row, line) in lines.iter().enumerate() {
     for (col, cell) in line.iter().enumerate() {
-      let point = Point::at(row as i32, col as i32);
+      let point = Point::at(col as i32, row as i32);
 
       map.insert(
         point,
@@ -530,7 +600,7 @@ fn parse_grid(grid: String) -> HashMap<Point, Cell> {
             "<" => CellValues::Op(Operator::ShiftLeft),
             ">" => CellValues::Op(Operator::ShiftRight),
             "^" => CellValues::Op(Operator::ShiftUp),
-            "V" => CellValues::Op(Operator::ShiftDown),
+            "v" | "V" => CellValues::Op(Operator::ShiftDown),
             "*" => CellValues::Op(Operator::Mul),
             "/" => CellValues::Op(Operator::Div),
             "%" => CellValues::Op(Operator::Mod),
@@ -541,7 +611,8 @@ fn parse_grid(grid: String) -> HashMap<Point, Cell> {
             "B" => CellValues::Param(Parameter::B),
             "S" => CellValues::EndState,
             a if a.chars().all(|c| c.is_ascii_digit()) => CellValues::Val(a.parse().unwrap()),
-            _ => continue,
+            "." => continue,
+            c => panic!("I don't know this char: {c}"),
           },
         },
       );

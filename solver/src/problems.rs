@@ -73,10 +73,10 @@ enum Direction {
 impl Direction {
   fn adjustment(&self) -> (i32, i32) {
     match self {
-      Direction::Up => (-1, 0),
-      Direction::Down => (1, 0),
-      Direction::Left => (0, -1),
-      Direction::Right => (0, 1),
+      Direction::Up => (0, -1),
+      Direction::Down => (0, 1),
+      Direction::Left => (-1, 0),
+      Direction::Right => (1, 0),
     }
   }
 }
