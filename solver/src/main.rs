@@ -58,7 +58,15 @@ enum Command {
 #[derive(Subcommand)]
 enum SpaceCommand {
   Solve,
-  Test { args: Vec<String> },
+  Test {
+    args: Vec<String>,
+  },
+  #[clap(name = "sim")]
+  Simulate {
+    args: Vec<String>,
+    #[arg(short, default_value_t = 1_000_000)]
+    iterations: usize,
+  },
 }
 
 #[tokio::main]
@@ -183,6 +191,9 @@ async fn main() -> miette::Result<()> {
         }
         SpaceCommand::Test { args } => {
           problems::test_solution(PROBLEM_NAME, args.join(" "), solution).await?;
+        }
+        SpaceCommand::Simulate { args, iterations } => {
+          let _solution = problems::spacetime::simulate(iterations, solution, args)?;
         }
       }
     }

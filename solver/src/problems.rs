@@ -58,7 +58,7 @@ impl Add<Direction> for Point {
     self,
     rhs: Direction,
   ) -> Self::Output {
-    self + rhs
+    self + rhs.adjustment()
   }
 }
 

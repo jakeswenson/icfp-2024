@@ -4,9 +4,10 @@ use std::collections::{HashMap, HashSet};
 use std::env::args;
 use std::fmt::{write, Display, Formatter};
 use termimad::minimad::parser::parse;
+use tracing::debug;
 
 // Shared types
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum Operator {
   ShiftLeft,
   ShiftRight,
@@ -29,7 +30,7 @@ enum OperatorArity {
   Quad,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 enum Parameter {
   A,
   B,
@@ -51,7 +52,7 @@ impl Display for Parameter {
   }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum CellValues {
   Op(Operator),
   Param(Parameter),
@@ -81,7 +82,7 @@ impl Cell {
 
 // End
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct StateChanges {
   time: Option<usize>,
   results: HashMap<Point, CellValues>,
@@ -114,7 +115,7 @@ impl Operator {
   ) -> Option<StateChanges> {
     use Direction::*;
 
-    Some(match self {
+    let changes = match self {
       Operator::ShiftLeft => {
         let value = args.get(&Right).unwrap().value;
         StateChanges {
@@ -272,7 +273,9 @@ impl Operator {
           results: HashMap::from([(pos + (-dx, -dy), CellValues::Val(value))]),
         }
       }
-    })
+    };
+
+    Some(changes)
   }
 
   fn arity(&self) -> OperatorArity {
@@ -330,6 +333,7 @@ impl Display for Operator {
 fn evaluate(
   mut grid: HashMap<Point, Cell>,
   args: HashMap<Parameter, i32>,
+  iterations: usize,
 ) {
   let mut states = Vec::new();
   states.push(grid.clone()); // t0
@@ -346,10 +350,13 @@ fn evaluate(
 
   states.push(grid.clone()); // t1
 
-  for time in 1..=1_000_000 {
+  for time in 1..=iterations {
     let mut new_time: Option<usize> = None;
 
     let grid = states[time].clone();
+
+    println!("======= T{time} =======");
+    print_grid(&grid);
 
     let operators: Vec<(Point, Operator)> = grid
       .values()
@@ -363,6 +370,8 @@ fn evaluate(
       })
       .collect();
 
+    debug!(operator_count = operators.len(), "Found Operators");
+
     let mut map = grid.clone();
     let mut consumed = HashSet::new();
     let mut written = HashSet::new();
@@ -370,6 +379,7 @@ fn evaluate(
     let mut warps: Vec<StateChanges> = Vec::new();
 
     for (p, op) in &operators {
+      debug!(point = ?p, ?op, "Processing operator");
       let arg_len = op.args().len();
       let args: HashMap<Direction, _> = op
         .args()
@@ -380,12 +390,16 @@ fn evaluate(
         })
         .collect();
 
+      debug!(args = ?args.keys(), "collected args");
       if args.len() == arg_len {
         for (_, cell) in &args {
           consumed.insert(cell.point());
         }
 
+        debug!("Tracked consumption");
+
         if let Some(changes) = op.apply(*p, args) {
+          debug!(?changes, "Operator Changes");
           for (p, v) in &changes.results {
             let new_cell = Cell {
               x: p.x,
@@ -410,6 +424,8 @@ fn evaluate(
           }
         }
       }
+
+      debug!("processed operator")
     }
 
     if let Some(new_time) = new_time {
@@ -441,7 +457,6 @@ fn evaluate(
       }
     };
 
-    print_grid(&map);
     states.push(map);
   }
 }
@@ -545,7 +560,28 @@ pub fn solve(
   let map = parse_grid(input);
   print_grid(&map);
 
-  evaluate(map, HashMap::new());
+  evaluate(map, HashMap::new(), 1_000_000);
 
   Err(ProblemError::BadSolution { reason: "TO DO" })
+}
+
+pub(crate) fn simulate(
+  iterations: usize,
+  input: String,
+  args: Vec<String>,
+) -> miette::Result<String, ProblemError> {
+  let map = parse_grid(input);
+  print_grid(&map);
+
+  println!("Starting simulation");
+
+  let arg_map = args
+    .iter()
+    .zip([Parameter::A, Parameter::B])
+    .map(|(arg, param)| (param, arg.parse().unwrap()))
+    .collect();
+
+  evaluate(map, arg_map, iterations);
+
+  Ok("Good".to_string())
 }

@@ -2,7 +2,6 @@ use super::parser::{
   base94_decode, base94_encode_number, BinOp, Decode, DeferredDecode, Encode, ICFPExpr, IntType,
   NatType, UnOp, Var,
 };
-use crate::parser::DeferredDecode::Deferred;
 use miette::{Diagnostic, Report};
 use std::cell::OnceCell;
 use std::collections::HashMap;
