@@ -365,6 +365,7 @@ fn evaluate(
 
     let mut map = grid.clone();
     let mut consumed = HashSet::new();
+    let mut written = HashSet::new();
 
     let mut warps: Vec<StateChanges> = Vec::new();
 
@@ -392,7 +393,7 @@ fn evaluate(
               value: *v,
             };
 
-            consumed.remove(&p);
+            written.insert(*p);
 
             let option = map.insert(*p, new_cell);
             // TODO: Enforce conflict writes
@@ -421,6 +422,19 @@ fn evaluate(
               x: p.x,
               y: p.y,
               value: cell,
+            },
+          );
+        }
+      }
+    } else {
+      for consumed_point in &consumed {
+        if !written.contains(consumed_point) {
+          map.insert(
+            *consumed_point,
+            Cell {
+              x: consumed_point.x,
+              y: consumed_point.y,
+              value: CellValues::Empty,
             },
           );
         }
