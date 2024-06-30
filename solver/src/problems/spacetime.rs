@@ -528,6 +528,51 @@ fn evaluate(
 }
 // End
 
+const COLUMN_WIDTH: usize = 2;
+
+fn grid_line(line: &[CellValues]) -> String {
+  line
+    .iter()
+    .map(|cell| {
+      let symbol = match cell {
+        CellValues::Op(o) => o.to_string(),
+        CellValues::Param(p) => p.to_string(),
+        CellValues::Val(v) => v.to_string(),
+        CellValues::EndState => "S".to_string(),
+        CellValues::Empty => ".".to_string(),
+      };
+
+      format!("{:^COLUMN_WIDTH$}", symbol)
+    })
+    .collect::<String>()
+}
+
+fn print_compact(grid: &HashMap<Point, Cell>) -> String {
+  let xs = grid.keys().map(|p| p.x).collect::<Vec<_>>();
+  let ys = grid.keys().map(|p| p.y).collect::<Vec<_>>();
+
+  let min_x = *xs.iter().min().unwrap();
+  let max_x = *xs.iter().max().unwrap() + 1;
+
+  let min_y = *ys.iter().min().unwrap();
+  let max_y = *ys.iter().max().unwrap() + 1;
+
+  let cols = (max_x - min_x) as usize;
+  let rows = (max_y - min_y) as usize;
+
+  let mut map = vec![vec![CellValues::default(); cols]; rows];
+
+  grid.iter().for_each(|(k, v)| {
+    map[(k.y - min_y) as usize][(k.x - min_x) as usize] = v.value;
+  });
+
+  map
+    .iter()
+    .map(|line| grid_line(&line))
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
 fn print_grid(grid: &HashMap<Point, Cell>) {
   let xs = grid.keys().map(|p| p.x).collect::<Vec<_>>();
   let ys = grid.keys().map(|p| p.y).collect::<Vec<_>>();
@@ -541,47 +586,31 @@ fn print_grid(grid: &HashMap<Point, Cell>) {
   let cols = (max_x - min_x) as usize;
   let rows = (max_y - min_y) as usize;
 
-  let col_width = 2;
-  println!("{}", "=".repeat(col_width * cols + 10));
+  println!("{}", "=".repeat(COLUMN_WIDTH * cols + 10));
   println!(
     "   | {}",
     (0..cols)
       .map(|c| {
         if c < 10 || c % 2 == 0 {
-          format!("{c:^col_width$}")
+          format!("{c:^COLUMN_WIDTH$}")
         } else {
-          format!("{:^col_width$}", "")
+          format!("{:^COLUMN_WIDTH$}", "")
         }
       })
       .collect::<String>()
   );
-  println!("{}", "_".repeat(col_width * cols + 10));
+  println!("{}", "_".repeat(COLUMN_WIDTH * cols + 10));
   let mut map = vec![vec![CellValues::default(); cols]; rows];
 
   grid.iter().for_each(|(k, v)| {
     map[(k.y - min_y) as usize][(k.x - min_x) as usize] = v.value;
   });
 
-  map.iter().enumerate().for_each(|(no, line)| {
-    println!(
-      "{no:^3}| {}",
-      line
-        .iter()
-        .map(|cell| {
-          let symbol = match cell {
-            CellValues::Op(o) => o.to_string(),
-            CellValues::Param(p) => p.to_string(),
-            CellValues::Val(v) => v.to_string(),
-            CellValues::EndState => "S".to_string(),
-            CellValues::Empty => ".".to_string(),
-          };
-
-          format!("{:^col_width$}", symbol)
-        })
-        .collect::<String>(),
-    )
-  });
-  println!("{}", "=".repeat(col_width * cols + 10));
+  map
+    .iter()
+    .enumerate()
+    .for_each(|(no, line)| println!("{no:^3}| {}", grid_line(&line)));
+  println!("{}", "=".repeat(COLUMN_WIDTH * cols + 10));
 }
 
 // Visualizer
@@ -643,9 +672,11 @@ pub fn solve(
   let map = parse_grid(input);
   print_grid(&map);
 
-  evaluate(map, HashMap::new(), 1_000_000);
+  let string = print_compact(&map);
 
-  Err(ProblemError::BadSolution { reason: "TO DO" })
+  println!("{}", string);
+
+  Ok(string)
 }
 
 pub(crate) fn simulate(

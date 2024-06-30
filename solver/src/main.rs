@@ -185,9 +185,8 @@ async fn main() -> miette::Result<()> {
 
       match command {
         SpaceCommand::Solve => {
-          let _solution = problems::spacetime::solve(problem_id, solution)?;
-          unimplemented!();
-          // problems::submit(PROBLEM_NAME, problem_id, solution).await?
+          let solution = problems::spacetime::solve(problem_id, solution)?;
+          problems::submit_new_line(PROBLEM_NAME, problem_id, solution).await?
         }
         SpaceCommand::Test { args } => {
           problems::test_solution(PROBLEM_NAME, args.join(" "), solution).await?;

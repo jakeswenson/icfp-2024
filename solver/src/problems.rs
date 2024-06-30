@@ -191,6 +191,25 @@ pub(crate) async fn submit(
   Ok(())
 }
 
+pub(crate) async fn submit_new_line(
+  problem: &str,
+  id: usize,
+  solution: String,
+) -> miette::Result<()> {
+  let request = format!("solve {problem}{id}\n{solution}");
+
+  info!(request, "Submitting solution");
+  let prog = ICFPExpr::str(request);
+
+  let response = send_program(prog.encode()).await?;
+
+  let result = ICFPExpr::parse(&response).map_err(|e| miette!("Error Parsing: {}", e))?;
+
+  println!("Response: {result:?}");
+
+  Ok(())
+}
+
 pub(crate) async fn test_solution(
   problem: &str,
   args: String,
